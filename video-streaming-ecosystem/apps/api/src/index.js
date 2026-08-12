@@ -41,8 +41,12 @@ app.use('/api/admin', protect, adminOnly, adminRouter);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
-  startRefreshJob();
-});
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 4000;
+  app.listen(PORT, () => {
+    console.log(`API running on http://localhost:${PORT}`);
+    startRefreshJob();
+  });
+}
+
+export default app;
