@@ -1,22 +1,81 @@
-import Link from "next/link";
+"use client";
 
-export default async function HomePage() {
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { VideoCard } from "@/components/video-card";
+import { VideoCardSkeleton } from "@/components/video-card-skeleton";
+
+interface Video {
+  uuid: string;
+  title: string;
+  slug: string;
+  thumbnail: string | null;
+  duration: number;
+  views: number;
+  sourceViews?: string | null;
+  channelName?: string | null;
+}
+
+export default function HomePage() {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const res = await fetch(`${apiUrl}/api/videos?limit=24`);
+        if (!res.ok) throw new Error("Failed to load videos");
+        const json = await res.json();
+        setVideos(json.data || []);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 px-6 py-10">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-4xl font-semibold">Video Streaming Ecosystem</h1>
-        <p className="mt-4 text-slate-300">Clean proxy streaming, metadata explorer, and admin link management.</p>
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          <Link href="/watch/example-proxy-video" className="rounded-xl bg-slate-800 p-6 hover:bg-slate-700 transition">
-            <h2 className="text-2xl font-semibold">Watch Example Video</h2>
-            <p className="mt-2 text-slate-400">Demo watch page with HLS proxy link architecture.</p>
-          </Link>
-          <Link href="/admin/manage-stream-links" className="rounded-xl bg-slate-800 p-6 hover:bg-slate-700 transition">
-            <h2 className="text-2xl font-semibold">Manage Stream Links</h2>
-            <p className="mt-2 text-slate-400">Admin panel for copying permanent-looking proxy links.</p>
-          </Link>
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8">
+      {/* Hero */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-10"
+      >
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+          Discover Premium Content
+        </h1>
+        <p className="mt-2 text-muted-foreground">
+          Clean, fast, and ads-free streaming experience
+        </p>
+      </motion.div>
+
+      {/* Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <VideoCardSkeleton key={i} />
+          ))}
         </div>
-      </div>
-    </main>
+      ) : error ? (
+        <div className="glass-card p-12 text-center">
+          <p className="text-muted-foreground">{error}</p>
+        </div>
+      ) : videos.length === 0 ? (
+        <div className="glass-card p-12 text-center">
+          <p className="text-muted-foreground">No videos found</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {videos.map((video, i) => (
+            <VideoCard key={video.uuid} video={video} index={i} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

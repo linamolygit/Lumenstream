@@ -4,3 +4,5 @@ compatibility_date = "2024-08-01"
 
 [vars]
 API_BASE_URL = "https://your-node-api.railway.app"
+STREAM_SIGN_SECRET = "very-long-random-secret-key-here-change-me"
+REQUIRE_SIGNATURE = "false"

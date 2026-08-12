@@ -22,18 +22,20 @@ enum VideoStatus {
 }
 
 model User {
-  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  email         String    @unique @db.VarChar(255)
-  passwordHash  String    @map("password_hash") @db.VarChar(255)
-  name          String?   @db.VarChar(150)
-  role          Role      @default(user)
-  isActive      Boolean   @default(true) @map("is_active")
-  lastLoginAt   DateTime? @map("last_login_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  email            String    @unique @db.VarChar(255)
+  passwordHash     String    @map("password_hash") @db.VarChar(255)
+  name             String?   @db.VarChar(150)
+  role             Role      @default(user)
+  isActive         Boolean   @default(true) @map("is_active")
+  lastLoginAt      DateTime? @map("last_login_at")
+  resetToken       String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  likes         Like[]
-  comments      Comment[]
+  likes            Like[]
+  comments         Comment[]
 
   @@map("users")
 }

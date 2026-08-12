@@ -42,6 +42,20 @@ class AdvancedXHExtractor:
             info["error"] = str(e)
         return info
 
+    def refresh_m3u8(self, page_url: str) -> dict:
+        """
+        Sirf m3u8 + direct links refresh karta hai
+        """
+        yinfo = self.get_yt_dlp_info(page_url)
+        
+        return {
+            "m3u8_links": yinfo.get("m3u8_urls", []),
+            "direct_video_links": [yinfo["best_url"]] if yinfo.get("best_url") else [],
+            "duration": yinfo.get("duration"),
+            "error": yinfo.get("error"),
+            "success": bool(yinfo.get("m3u8_urls") or yinfo.get("best_url"))
+        }
+
     def extract_single(self, page_url: str) -> dict | None:
         html = self.fetch(page_url)
         if not html:
