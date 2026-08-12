@@ -54,6 +54,7 @@ class Video(Base):
     direct_video_links = Column(JSON)
     status = Column(Enum(VideoStatus), default=VideoStatus.active)
     is_featured = Column(Boolean, default=False)
+    scraped_by_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     last_checked_at = Column(DateTime)

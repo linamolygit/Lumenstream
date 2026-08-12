@@ -36,6 +36,7 @@ model User {
 
   likes            Like[]
   comments         Comment[]
+  scrapedVideos    Video[]
 
   @@map("users")
 }
@@ -88,11 +89,14 @@ model Video {
   status            VideoStatus @default(active)
   isFeatured        Boolean     @default(false) @map("is_featured")
   
+  scrapedById       BigInt?     @map("scraped_by_id") @db.UnsignedBigInt
+  
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
   lastCheckedAt     DateTime?   @map("last_checked_at")
   
   channel           Channel?    @relation(fields: [channelId], references: [id])
+  scrapedBy         User?       @relation(fields: [scrapedById], references: [id])
   likes             Like[]
   comments          Comment[]
   streamLogs        StreamLog[]
@@ -102,6 +106,7 @@ model Video {
   @@index([createdAt])
   @@index([isFeatured])
   @@index([channelId])
+  @@index([scrapedById])
   @@map("videos")
 }
 

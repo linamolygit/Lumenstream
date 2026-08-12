@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import videosRouter from './routes/videos.js';
 import adminRouter from './routes/admin.js';
 import authRouter from './routes/auth.js';
+import userRouter from './routes/user.js';
 import { protect, adminOnly } from './middleware/auth.js';
 import { startRefreshJob } from './jobs/refreshJob.js';
 import {
@@ -29,11 +30,13 @@ app.use('/api/auth/forgot-password', authLimiter);
 
 app.use('/api/admin/scrape', scrapeLimiter);
 app.use('/api/admin/scrape/listing', scrapeLimiter);
+app.use('/api/user/scrape', scrapeLimiter);
 
 app.use('/api/videos/uuid', streamLimiter);
 
 app.use('/api/videos', videosRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/user', userRouter);
 app.use('/api/admin', protect, adminOnly, adminRouter);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

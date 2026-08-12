@@ -7,12 +7,12 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from .database import get_db, engine, Base
 from .models import Video, VideoStatus
-from .engine.extractor import AdvancedXHExtractor
+from .engine.extractor import AdvancedMultiSiteExtractor
 import uuid
 
 app = FastAPI(title="MediaHoster Scraper Service", version="1.0")
 
-extractor = AdvancedXHExtractor()
+extractor = AdvancedMultiSiteExtractor()
 
 class ScrapeRequest(BaseModel):
     url: HttpUrl
@@ -49,11 +49,12 @@ async def scrape_single(payload: ScrapeRequest, db: AsyncSession = Depends(get_d
     result = await db.execute(select(Video).where(Video.source_page_url == url))
     existing = result.scalar_one_or_none()
     if existing:
-        return {"message": "Video already exists", "uuid": existing.uuid}
+        return {"message": "Video already exists", "uuid": existing.uuid, "title": existing.title}
 
     video = Video(
         uuid=data["uuid"],
         source_page_url=data["source_page_url"],
+        source_site=data.get("source_site", "generic"),
         title=data["title"],
         slug=data["slug"],
         duration=data.get("duration") or 0,
@@ -82,52 +83,43 @@ async def scrape_single(payload: ScrapeRequest, db: AsyncSession = Depends(get_d
 
 @app.post("/scrape/listing")
 async def scrape_listing(payload: ListingRequest, db: AsyncSession = Depends(get_db)):
-    html = extractor.fetch(str(payload.url))
-    if not html:
-        raise HTTPException(status_code=400, detail="Failed to fetch listing page")
+    listing_url = str(payload.url)
+    video_urls = extractor.extract_listing(listing_url, max_videos=payload.max_videos)
 
-    soup = BeautifulSoup(html, "lxml")
-    items = soup.select('div.video-thumb, div.thumb-list__item, div[data-video-id], a[href*="/videos/"]')
-    
+    if not video_urls:
+        raise HTTPException(status_code=400, detail="No video links found on this page")
+
     results = []
-    processed_urls = set()
-
-    for item in items:
-        if len(results) >= payload.max_videos:
-            break
-        
-        if item.name == 'a':
-            link = item
-        else:
-            link = item.select_one('a[data-role="thumb-link"], a.video-thumb-info__name, a[href*="/videos/"]')
-
-        if not link or not link.get("href"):
-            continue
-        
-        video_url = urljoin(str(payload.url), link["href"])
-        if video_url in processed_urls or not ("/videos/" in video_url or "/video/" in video_url):
-            continue
-        processed_urls.add(video_url)
-
-        # Check duplicate in db
-        existing = await db.execute(select(Video).where(Video.source_page_url == video_url))
-        if existing.scalar_one_or_none():
-            results.append({"url": video_url, "status": "already_exists"})
+    for video_url in video_urls:
+        existing = await db.execute(
+            select(Video).where(Video.source_page_url == video_url)
+        )
+        existing_video = existing.scalar_one_or_none()
+        if existing_video:
+            results.append({
+                "url": video_url,
+                "status": "already_exists",
+                "uuid": existing_video.uuid,
+                "title": existing_video.title
+            })
             continue
 
-        # Scrape video
         data = extractor.extract_single(video_url)
         if not data or not data.get("title"):
+            results.append({"url": video_url, "status": "failed"})
             continue
 
         video = Video(
             uuid=data["uuid"],
             source_page_url=data["source_page_url"],
+            source_site=data.get("source_site", "generic"),
             title=data["title"],
             slug=data["slug"],
             duration=data.get("duration") or 0,
+            source_views=data.get("source_views"),
             channel_name=data.get("channel_name"),
             channel_url=data.get("channel_url"),
+            channel_logo=data.get("channel_logo"),
             thumbnail=data.get("thumbnail"),
             thumbnails=data.get("thumbnails"),
             sprite=data.get("sprite"),
@@ -138,11 +130,16 @@ async def scrape_listing(payload: ListingRequest, db: AsyncSession = Depends(get
         )
         db.add(video)
         await db.commit()
-        results.append({"url": video_url, "status": "scraped", "uuid": data["uuid"], "title": data["title"]})
+        results.append({
+            "url": video_url,
+            "status": "scraped",
+            "uuid": data["uuid"],
+            "title": data["title"],
+        })
 
     return {
         "message": f"Processed {len(results)} videos",
-        "results": results
+        "results": results,
     }
 
 @app.post("/refresh/single")
