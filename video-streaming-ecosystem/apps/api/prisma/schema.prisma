@@ -1,0 +1,150 @@
+// This is your prisma/schema.prisma file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  user
+}
+
+enum VideoStatus {
+  active
+  dead
+  processing
+  hidden
+}
+
+model User {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  email         String    @unique @db.VarChar(255)
+  passwordHash  String    @map("password_hash") @db.VarChar(255)
+  name          String?   @db.VarChar(150)
+  role          Role      @default(user)
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  likes         Like[]
+  comments      Comment[]
+
+  @@map("users")
+}
+
+model Channel {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  name        String    @db.VarChar(255)
+  slug        String    @unique @db.VarChar(255)
+  logoUrl     String?   @map("logo_url") @db.Text
+  sourceUrl   String?   @map("source_url") @db.Text
+  description String?   @db.Text
+  videoCount  Int       @default(0) @map("video_count")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  videos      Video[]
+
+  @@map("channels")
+}
+
+model Video {
+  id                BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  uuid              String      @unique @db.Char(36)
+  
+  sourceId          String?     @map("source_id") @db.VarChar(50)
+  sourcePageUrl     String?     @map("source_page_url") @db.Text
+  sourceSite        String      @default("xhamster") @map("source_site") @db.VarChar(100)
+  
+  title             String      @db.VarChar(500)
+  slug              String      @db.VarChar(500)
+  description       String?     @db.Text
+  
+  duration          Int         @default(0) @db.UnsignedInt
+  views             BigInt      @default(0) @db.UnsignedBigInt
+  sourceViews       String?     @map("source_views") @db.VarChar(50)
+  
+  channelId         BigInt?     @map("channel_id") @db.UnsignedBigInt
+  channelName       String?     @map("channel_name") @db.VarChar(255)
+  channelUrl        String?     @map("channel_url") @db.Text
+  channelLogo       String?     @map("channel_logo") @db.Text
+  
+  thumbnail         String?     @db.Text
+  thumbnails        Json?
+  sprite            String?     @db.Text
+  previewVideos     Json?       @map("preview_videos")
+  
+  m3u8Links         Json?       @map("m3u8_links")
+  directVideoLinks  Json?       @map("direct_video_links")
+  
+  status            VideoStatus @default(active)
+  isFeatured        Boolean     @default(false) @map("is_featured")
+  
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  lastCheckedAt     DateTime?   @map("last_checked_at")
+  
+  channel           Channel?    @relation(fields: [channelId], references: [id])
+  likes             Like[]
+  comments          Comment[]
+  streamLogs        StreamLog[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([createdAt])
+  @@index([isFeatured])
+  @@index([channelId])
+  @@map("videos")
+}
+
+model StreamLog {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  videoUuid       String   @map("video_uuid") @db.Char(36)
+  ip              String?  @db.VarChar(45)
+  userAgent       String?  @map("user_agent") @db.Text
+  referer         String?  @db.Text
+  country         String?  @db.VarChar(10)
+  watchedSeconds  Int      @default(0) @map("watched_seconds") @db.UnsignedInt
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  video           Video    @relation(fields: [videoUuid], references: [uuid], onDelete: Cascade)
+
+  @@index([videoUuid])
+  @@index([createdAt])
+  @@map("stream_logs")
+}
+
+model Like {
+  userId    BigInt   @map("user_id") @db.UnsignedBigInt
+  videoId   BigInt   @map("video_id") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId])
+  @@map("likes")
+}
+
+model Comment {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  videoId     BigInt   @map("video_id") @db.UnsignedBigInt
+  userId      BigInt   @map("user_id") @db.UnsignedBigInt
+  content     String   @db.Text
+  isApproved  Boolean  @default(true) @map("is_approved")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@map("comments")
+}
+

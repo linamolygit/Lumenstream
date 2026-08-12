@@ -1,0 +1,35 @@
+# Dependency directories
+node_modules/
+.venv/
+venv/
+ENV/
+env/
+
+# Environment files & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Build outputs & caches
+dist/
+.build/
+build/
+.next/
+out/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+
+# IDEs & System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Scraper downloads/temp
+/Scraper/downloads/

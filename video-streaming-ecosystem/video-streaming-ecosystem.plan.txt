@@ -1,0 +1,7 @@
+Project skeleton for the proposed streaming ecosystem.
+
+Next steps:
+- fill in real scraping logic inside FastAPI extractor
+- wire Prisma DB connection and migrations
+- configure Cloudflare Worker credentials
+- implement auth and admin security

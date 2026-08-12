@@ -1,0 +1,6 @@
+name = "vse-media-proxy"
+main = "./src/index.ts"
+compatibility_date = "2026-08-12"
+
+[vars]
+API_BASE = "https://api.localhost"  # replace with your real backend API URL
