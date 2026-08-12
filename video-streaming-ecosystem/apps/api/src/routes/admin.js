@@ -4,6 +4,38 @@ import { generateSignedUrl } from '../utils/sign.js';
 
 const router = express.Router();
 
+async function callScraper(endpoint, body, timeoutMs = 120000) {
+  const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+
+  // Early health ping to awaken Render scraper
+  fetch(`${scraperUrl}/health`).catch(() => {});
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${scraperUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || data.detail || 'Scraper request failed');
+    }
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Scraper is waking up or taking too long. Please try again in a minute.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // ======================
 // STATS ENDPOINT
 // ======================
@@ -135,15 +167,8 @@ router.patch('/videos/:id', async (req, res) => {
 router.post('/videos/:uuid/refresh', async (req, res) => {
   try {
     const { uuid } = req.params;
-
-    const response = await fetch(`${process.env.SCRAPER_URL || 'http://localhost:8000'}/refresh/single`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uuid }),
-    });
-
-    const data = await response.json();
-    res.status(response.status).json(data);
+    const data = await callScraper('/refresh/single', { uuid });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -153,15 +178,8 @@ router.post('/videos/:uuid/refresh', async (req, res) => {
 router.post('/videos/refresh-bulk', async (req, res) => {
   try {
     const { limit = 15, only_dead = true } = req.body;
-
-    const response = await fetch(`${process.env.SCRAPER_URL || 'http://localhost:8000'}/refresh/bulk`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit, only_dead }),
-    });
-
-    const data = await response.json();
-    res.status(response.status).json(data);
+    const data = await callScraper('/refresh/bulk', { limit, only_dead });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -173,14 +191,8 @@ router.post('/scrape', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
 
-    const response = await fetch((process.env.SCRAPER_URL || 'http://localhost:8000') + '/scrape/single', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-
-    const data = await response.json();
-    res.status(response.status).json(data);
+    const data = await callScraper('/scrape/single', { url });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -192,14 +204,8 @@ router.post('/scrape/listing', async (req, res) => {
     const { url, max_videos = 20 } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
 
-    const response = await fetch((process.env.SCRAPER_URL || 'http://localhost:8000') + '/scrape/listing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, max_videos }),
-    });
-
-    const data = await response.json();
-    res.status(response.status).json(data);
+    const data = await callScraper('/scrape/listing', { url, max_videos });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -4,6 +4,38 @@ import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
+async function callScraper(endpoint, body, timeoutMs = 120000) {
+  const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+
+  // Early health ping to awaken Render scraper
+  fetch(`${scraperUrl}/health`).catch(() => {});
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${scraperUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || data.detail || 'Scrape failed');
+    }
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Scraper is waking up or taking too long. Please try again in a minute.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // User apni scraped videos dekh sake
 router.get('/my-videos', protect, async (req, res) => {
   try {
@@ -39,17 +71,7 @@ router.post('/scrape', protect, async (req, res) => {
     const endpoint = isListing ? '/scrape/listing' : '/scrape/single';
     const body = isListing ? { url, max_videos } : { url };
 
-    const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
-    const response = await fetch(`${scraperUrl}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json(data);
-    }
+    const data = await callScraper(endpoint, body, 120000);
 
     // scraped_by update (single case)
     if (data.uuid) {

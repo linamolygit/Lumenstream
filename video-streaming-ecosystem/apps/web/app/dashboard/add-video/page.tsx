@@ -115,6 +115,12 @@ export default function AddVideoPage() {
               "Start Scrape"
             )}
           </Button>
+
+          {loading && (
+            <p className="text-xs text-center text-muted-foreground animate-pulse">
+              Scraping in progress. If this is the first request after a while, it can take up to 60–90 seconds while the server wakes up.
+            </p>
+          )}
         </form>
 
         {/* Success */}
