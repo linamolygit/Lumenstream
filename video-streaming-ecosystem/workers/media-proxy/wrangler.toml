@@ -1,6 +1,6 @@
-name = "vse-media-proxy"
-main = "./src/index.ts"
-compatibility_date = "2026-08-12"
+name = "mediahoster-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-08-01"
 
 [vars]
-API_BASE = "https://api.localhost"  # replace with your real backend API URL
+API_BASE_URL = "https://your-node-api.railway.app"
