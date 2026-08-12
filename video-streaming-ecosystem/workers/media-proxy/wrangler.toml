@@ -1,8 +1,8 @@
 name = "mediahoster-proxy"
 main = "src/index.ts"
-compatibility_date = "2024-08-01"
+compatibility_date = "2026-08-12"
 
 [vars]
-API_BASE_URL = "https://your-node-api.railway.app"
-STREAM_SIGN_SECRET = "very-long-random-secret-key-here-change-me"
-REQUIRE_SIGNATURE = "false"
+API_BASE_URL = "https://lumenstream-api.onrender.com"
+STREAM_SIGN_SECRET = "7137765914fd7776ced46cf1147fb16a533c0073774e7f6f8ef4d76f8bdb8ce3"
+REQUIRE_SIGNATURE = "true"
