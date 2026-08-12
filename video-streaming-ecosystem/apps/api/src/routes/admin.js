@@ -1,10 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
 import prisma from '../utils/prisma.js';
 import { protect, adminOnly } from '../middleware/auth.js';
-
-dotenv.config();
 
 const router = express.Router();
 
