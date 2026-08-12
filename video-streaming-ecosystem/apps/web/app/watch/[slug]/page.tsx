@@ -57,6 +57,7 @@ export default function WatchPage() {
   const [playerKey, setPlayerKey] = useState(0);
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [watchLinkCopied, setWatchLinkCopied] = useState(false);
 
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
   const workerBase = process.env.NEXT_PUBLIC_WORKER_URL || "http://localhost:8787";
@@ -97,6 +98,14 @@ export default function WatchPage() {
     if (!video?.uuid) return "";
     return `${workerBase}/api/media?uuid=${video.uuid}`;
   }, [video?.uuid, workerBase]);
+
+  const copyWatchLink = async () => {
+    if (!video) return;
+    const pageUrl = `${window.location.origin}/watch/${video.slug}`;
+    await navigator.clipboard.writeText(pageUrl);
+    setWatchLinkCopied(true);
+    setTimeout(() => setWatchLinkCopied(false), 2000);
+  };
 
   const copyStreamLink = async () => {
     if (!streamUrl) return;
@@ -247,22 +256,40 @@ export default function WatchPage() {
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <button
+                  onClick={copyWatchLink}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
+                    watchLinkCopied
+                      ? "bg-emerald-500 text-white"
+                      : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:opacity-95 shadow-md shadow-violet-500/20"
+                  )}
+                >
+                  {watchLinkCopied ? (
+                    <>
+                      <Check className="h-4 w-4" /> Watch Link Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" /> Copy Watch Link
+                    </>
+                  )}
+                </button>
+
+                <button
                   onClick={copyStreamLink}
                   disabled={!streamUrl || inactive}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50",
-                    copied
-                      ? "bg-emerald-500 text-white"
-                      : "bg-violet-600 text-white hover:bg-violet-700"
+                    "inline-flex items-center gap-2 rounded-2xl border border-black/5 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200 dark:hover:bg-white/10",
+                    copied && "border-emerald-500 text-emerald-600 dark:text-emerald-400"
                   )}
                 >
                   {copied ? (
                     <>
-                      <Check className="h-4 w-4" /> Stream Link Copied
+                      <Check className="h-4 w-4 text-emerald-500" /> Stream Link Copied
                     </>
                   ) : (
                     <>
-                      <Copy className="h-4 w-4" /> Copy Stream Link
+                      <Copy className="h-4 w-4" /> Copy Direct Stream Link
                     </>
                   )}
                 </button>

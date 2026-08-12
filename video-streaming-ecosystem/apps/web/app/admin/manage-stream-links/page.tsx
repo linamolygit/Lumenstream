@@ -128,6 +128,13 @@ export default function ManageStreamLinksPage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const copyWatchLink = async (slug?: string, uuid?: string) => {
+    const origin = window.location.origin;
+    const link = `${origin}/watch/${slug || uuid}`;
+    await navigator.clipboard.writeText(link);
+    flashCopied(`watch-${uuid}`);
+  };
+
   const copyStreamLink = async (uuid: string) => {
     if (!workerBase) return;
     const link = `${workerBase}/api/media?uuid=${uuid}`;
@@ -219,6 +226,7 @@ export default function ManageStreamLinksPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {pageItems.map((video, i) => {
+            const watchCopied = copiedKey === `watch-${video.uuid}`;
             const streamCopied = copiedKey === `stream-${video.uuid}`;
             const signedCopied = copiedKey === `signed-${video.uuid}`;
 
@@ -283,6 +291,25 @@ export default function ManageStreamLinksPage() {
 
                   {/* Action buttons */}
                   <div className="mt-3 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => copyWatchLink(video.slug, video.uuid)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-xl border border-violet-500/30 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-violet-700 shadow-xs",
+                        watchCopied && "bg-emerald-600 text-white"
+                      )}
+                    >
+                      {watchCopied ? (
+                        <>
+                          <Check className="h-3 w-3" /> Watch Link Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" /> Copy Watch Link
+                        </>
+                      )}
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => copyStreamLink(video.uuid)}

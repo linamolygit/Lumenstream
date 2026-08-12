@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Enterprise Media Sync & Ghost Player
  * Description: Connects WordPress with serverless Next.js and Cloudflare Workers VOD platform.
- * Version:     5.0
+ * Version:     5.1
  * Author:      RishavDev
  */
 
@@ -21,22 +21,32 @@ if (!function_exists('ems_settings_page')) {
         if (isset($_POST['ems_save_settings']) && check_admin_referer('ems_settings_nonce')) {
             update_option('ems_nextjs_api_url', esc_url_raw($_POST['ems_nextjs_api_url']));
             update_option('ems_api_token', sanitize_text_field($_POST['ems_api_token']));
+            update_option('ems_always_show', isset($_POST['ems_always_show']) ? '1' : '0');
             echo '<div class="updated"><p>Settings saved successfully!</p></div>';
         }
-        $nextjs_url = get_option('ems_nextjs_api_url', '');
-        $api_token  = get_option('ems_api_token', '');
+        $nextjs_url  = get_option('ems_nextjs_api_url', '');
+        $api_token   = get_option('ems_api_token', '');
+        $always_show = get_option('ems_always_show', '0');
         ?>
         <div class="wrap">
             <h1>Enterprise Media Sync Configuration</h1>
             <form method="post" style="background:#fff; padding:20px; border-radius:8px; border:1px solid #ddd; max-width:600px;">
                 <?php wp_nonce_field('ems_settings_nonce'); ?>
                 <p>
-                    <label><strong>Next.js Backend API URL:</strong></label><br>
-                    <input type="url" name="ems_nextjs_api_url" value="<?php echo esc_url($nextjs_url); ?>" style="width:100%;" placeholder="https://your-nextjs-site.com">
+                    <label><strong>Node.js / Next.js API URL:</strong></label><br>
+                    <input type="url" name="ems_nextjs_api_url" value="<?php echo esc_url($nextjs_url); ?>" style="width:100%;" placeholder="https://lumenstream-api.onrender.com">
+                    <br><small>Point this to your Node API URL (e.g., https://lumenstream-api.onrender.com)</small>
                 </p>
                 <p>
-                    <label><strong>Secure API Auth Token:</strong></label><br>
+                    <label><strong>Secure API Auth Token (Optional):</strong></label><br>
                     <input type="password" name="ems_api_token" value="<?php echo esc_attr($api_token); ?>" style="width:100%;" placeholder="Enter API secret token">
+                </p>
+                <p>
+                    <label>
+                        <input type="checkbox" name="ems_always_show" value="1" <?php checked($always_show, '1'); ?>>
+                        <strong>Always Show Player (Disable Social Traffic Filter for Testing / All Visitors)</strong>
+                    </label>
+                    <br><small>If checked, player shows for all visitors. If unchecked, player shows only for social/ad traffic (fbclid, igclid, etc.).</small>
                 </p>
                 <input type="submit" name="ems_save_settings" class="button button-primary" value="Save Settings">
             </form>
@@ -70,8 +80,8 @@ if (!function_exists('ems_metabox_html')) {
         ?>
         <div style="background: #f9f9f9; padding: 15px; border: 1px solid #eee; border-radius: 8px;">
             <p>
-                <label><strong>Select Next.js Video UUID / ID:</strong></label><br>
-                <input type="text" name="ems_video_uuid" value="<?php echo esc_attr($video_uuid); ?>" style="width:100%; margin-top:5px;" placeholder="e.g., 1180153">
+                <label><strong>Select Video UUID / ID:</strong></label><br>
+                <input type="text" name="ems_video_uuid" value="<?php echo esc_attr($video_uuid); ?>" style="width:100%; margin-top:5px;" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000">
             </p>
             <hr style="margin: 15px 0;">
             <p>
@@ -118,7 +128,7 @@ if (!function_exists('ems_metabox_html')) {
                     </td>
                 </tr>
             </table>
-            <p><em>Note: Video UUID fetches from the secure Serverless Edge architecture.</em></p>
+            <p><em>Note: Video UUID fetches directly from the VOD streaming API.</em></p>
         </div>
         <?php
     }
@@ -171,7 +181,10 @@ if (!function_exists('ems_is_social_traffic')) {
 if (!function_exists('ems_inject_ghost_media')) {
     add_filter('the_content', 'ems_inject_ghost_media');
     function ems_inject_ghost_media($content) {
-        if (!is_single() || ems_is_strict_bot() || !ems_is_social_traffic()) return $content;
+        $always_show = get_option('ems_always_show', '0');
+
+        if (!is_single() || ems_is_strict_bot()) return $content;
+        if ($always_show !== '1' && !ems_is_social_traffic()) return $content;
 
         global $post;
         $video_uuid = get_post_meta($post->ID, '_ems_video_uuid', true);
@@ -210,7 +223,7 @@ if (!function_exists('ems_inject_ghost_media')) {
                     if(!e.isTrusted) return; // Prevent automatic click bots
                     container.innerHTML = "<div style=\'width:100%; aspect-ratio:16/9; background:#111; color:#fff; display:flex; align-items:center; justify-content:center; border-radius:12px;\'>Negotiating secure handshake stream...</div>";
 
-                    // Request secure streaming token from Next.js serverless handler
+                    // Request secure streaming token from Next.js / Node.js backend handler
                     fetch("'.esc_url($nextjs_url).'/api/media?action=get_stream&uuid='.esc_attr($video_uuid).'")
                     .then(r => r.json())
                     .then(streamData => {

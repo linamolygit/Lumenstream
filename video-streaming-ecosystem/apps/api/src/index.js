@@ -39,6 +39,51 @@ app.use('/api/auth', authRouter);
 app.use('/api/user', userRouter);
 app.use('/api/admin', protect, adminOnly, adminRouter);
 
+// WordPress Plugin / VOD Proxy compatibility route
+app.get('/api/media', async (req, res) => {
+  try {
+    const { action, uuid } = req.query;
+    if (!uuid) return res.status(400).json({ success: false, error: 'uuid required' });
+
+    const { default: prisma } = await import('./utils/prisma.js');
+    const video = await prisma.video.findUnique({
+      where: { uuid: String(uuid) },
+    });
+
+    if (!video || video.status !== 'active') {
+      return res.status(404).json({ success: false, error: 'Video not found or inactive' });
+    }
+
+    if (action === 'get_thumb') {
+      return res.json({
+        success: true,
+        thumbnail: video.thumbnail || '',
+        title: video.title,
+        duration: video.duration,
+      });
+    }
+
+    const workerUrl = (process.env.WORKER_PUBLIC_URL || process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:8787').replace(/\/$/, '');
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+    const streamUrl = `${workerUrl}/api/media?uuid=${video.uuid}`;
+    const watchUrl = `${frontendUrl}/watch/${video.slug}`;
+
+    const playerHtml = `<iframe src="${watchUrl}" style="width:100%; aspect-ratio:16/9; border:0; border-radius:12px;" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+
+    res.json({
+      success: true,
+      uuid: video.uuid,
+      title: video.title,
+      stream_url: streamUrl,
+      watch_url: watchUrl,
+      player_html: playerHtml,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 if (!process.env.VERCEL) {
