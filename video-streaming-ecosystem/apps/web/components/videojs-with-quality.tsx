@@ -10,12 +10,18 @@ interface Props {
   m3u8Links?: string[];
   poster?: string | null;
   title?: string;
+  onError?: () => void;
 }
 
-export function VideoJSWithQuality({ uuid, m3u8Links = [], poster, title }: Props) {
+export function VideoJSWithQuality({ uuid, m3u8Links = [], poster, title, onError }: Props) {
   const [quality, setQuality] = useState("auto");
   const [showMenu, setShowMenu] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  const handleError = () => {
+    setHasError(true);
+    onError?.();
+  };
 
   const qualities = useMemo(() => {
     const list = [{ label: "Auto", value: "auto" }];
@@ -39,26 +45,17 @@ export function VideoJSWithQuality({ uuid, m3u8Links = [], poster, title }: Prop
 
   return (
     <div className="relative">
-      {hasError ? (
-        <div className="aspect-video rounded-3xl glass-card flex items-center justify-center bg-black/60">
-          <div className="text-center p-6">
-            <p className="text-white font-medium mb-1">Stream unavailable</p>
-            <p className="text-white/60 text-sm">
-              This link may have expired. Please try again later.
-            </p>
-          </div>
-        </div>
-      ) : (
+      {!hasError && (
         <VideoJSPlayer
           uuid={uuid}
           poster={poster}
           title={title}
           quality={quality}
-          onError={() => setHasError(true)}
+          onError={handleError}
         />
       )}
 
-      {/* Quality Menu */}
+      {/* Quality Menu — top-right of player */}
       {qualities.length > 1 && !hasError && (
         <div className="absolute top-4 right-4 z-30">
           <button

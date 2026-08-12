@@ -1,174 +1,199 @@
 export interface Env {
   API_BASE_URL: string;
-  STREAM_SIGN_SECRET?: string;
-  REQUIRE_SIGNATURE?: string;
+  STREAM_SIGN_SECRET: string;
+  // set true if you want to REQUIRE signed links only
+  REQUIRE_SIGNED?: string;
 }
 
-const rateMap = new Map<string, { count: number; reset: number }>();
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+  };
+}
 
-function checkRate(ip: string, limit = 60, windowMs = 60000): boolean {
-  const now = Date.now();
-  const entry = rateMap.get(ip);
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-  if (!entry || now > entry.reset) {
-    rateMap.set(ip, { count: 1, reset: now + windowMs });
-    return true;
+async function verifySigned(
+  uuid: string,
+  exp: string | null,
+  sig: string | null,
+  secret: string,
+  requireSigned: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  // If signed params missing
+  if (!exp && !sig) {
+    if (requireSigned) return { ok: false, error: "Signed link required" };
+    return { ok: true }; // allow open uuid links
   }
 
-  if (entry.count >= limit) return false;
-  entry.count++;
-  return true;
+  if (!exp || !sig) return { ok: false, error: "Invalid signature params" };
+
+  const expNum = Number(exp);
+  if (!Number.isFinite(expNum)) return { ok: false, error: "Invalid exp" };
+  if (Math.floor(Date.now() / 1000) > expNum) {
+    return { ok: false, error: "Link expired" };
+  }
+
+  const expectedFull = await hmacHex(secret, `${uuid}:${exp}`);
+  const expected = expectedFull.slice(0, 32);
+
+  // constant-time-ish compare
+  if (expected.length !== sig.length) return { ok: false, error: "Invalid signature" };
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  }
+  if (diff !== 0) return { ok: false, error: "Invalid signature" };
+
+  return { ok: true };
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-  'Access-Control-Allow-Headers': '*',
-  'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
-  'Access-Control-Max-Age': '86400',
-};
+function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: string): string {
+  // Keep exp/sig on segment requests if present
+  const q = search.startsWith("?") ? search : search ? `?${search}` : "";
+  return body
+    .split("\n")
+    .map((line) => {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) return line;
+      // absolute or relative segment URL → proxy through worker
+      const encoded = encodeURIComponent(t);
+      return `${workerOrigin}/api/segment?uuid=${encodeURIComponent(uuid)}&u=${encoded}${
+        q ? "&" + q.slice(1) : ""
+      }`;
+    })
+    .join("\n");
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    // Handle OPTIONS preflight requests for CORS
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders,
-      });
-    }
-
     const url = new URL(request.url);
 
-    if (!url.pathname.startsWith('/api/media')) {
-      return new Response('Not Found', { status: 404, headers: corsHeaders });
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    // IP rate limit check
-    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    if (!checkRate(ip)) {
-      return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    // GET /api/media?uuid=&exp=&sig=
+    if (url.pathname === "/api/media") {
+      const uuid = url.searchParams.get("uuid");
+      if (!uuid) {
+        return new Response(JSON.stringify({ error: "uuid required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
+
+      const check = await verifySigned(uuid, exp, sig, env.STREAM_SIGN_SECRET, requireSigned);
+      if (!check.ok) {
+        return new Response(JSON.stringify({ error: check.error }), {
+          status: 403,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+
+      // Fetch video metadata from API
+      const metaRes = await fetch(`${env.API_BASE_URL}/api/videos/uuid/${uuid}`);
+      if (!metaRes.ok) {
+        return new Response(JSON.stringify({ error: "Video not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      const video = (await metaRes.json()) as { m3u8Links?: string[]; status?: string };
+      if (video.status && video.status !== "active") {
+        return new Response(JSON.stringify({ error: "Stream unavailable" }), {
+          status: 410,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+
+      const m3u8 = Array.isArray(video.m3u8Links) ? video.m3u8Links[0] : null;
+      if (!m3u8) {
+        return new Response(JSON.stringify({ error: "No stream" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+
+      const upstream = await fetch(m3u8, {
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
       });
-    }
+      if (!upstream.ok) {
+        return new Response(JSON.stringify({ error: "Upstream failed" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
 
-    // Segment proxy handler
-    if (url.pathname === '/api/media/segment') {
-      const segmentUrl = url.searchParams.get('url');
-      if (!segmentUrl) return new Response('Missing url', { status: 400, headers: corsHeaders });
+      const text = await upstream.text();
+      // preserve signed query on segment rewrites
+      const signedQuery = new URLSearchParams();
+      if (exp) signedQuery.set("exp", exp);
+      if (sig) signedQuery.set("sig", sig);
+      const qs = signedQuery.toString();
 
-      const segRes = await fetch(segmentUrl, {
+      const rewritten = rewriteM3u8(text, url.origin, uuid, qs);
+
+      return new Response(rewritten, {
+        status: 200,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://xhamster.com/',
+          "Content-Type": "application/vnd.apple.mpegurl",
+          "Cache-Control": "no-store",
+          ...corsHeaders(),
         },
       });
-      return new Response(segRes.body, {
-        headers: {
-          'Content-Type': segRes.headers.get('Content-Type') || 'video/mp2t',
-          'Accept-Ranges': 'bytes',
-          ...corsHeaders,
-        },
-      });
     }
 
-    const uuid = url.searchParams.get('uuid');
-    const exp = url.searchParams.get('exp');
-    const sig = url.searchParams.get('sig');
-    const quality = url.searchParams.get('quality');
+    // GET /api/segment?uuid=&u=&exp=&sig=
+    if (url.pathname === "/api/segment") {
+      const uuid = url.searchParams.get("uuid") || "";
+      const target = url.searchParams.get("u");
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
 
-    if (!uuid) {
-      return new Response(JSON.stringify({ error: 'uuid required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      if (!target) {
+        return new Response("missing u", { status: 400, headers: corsHeaders() });
+      }
+
+      const check = await verifySigned(uuid, exp, sig, env.STREAM_SIGN_SECRET, requireSigned);
+      if (!check.ok) {
+        return new Response(check.error || "Forbidden", { status: 403, headers: corsHeaders() });
+      }
+
+      let segmentUrl = target;
+      try {
+        segmentUrl = decodeURIComponent(target);
+      } catch {}
+
+      const upstream = await fetch(segmentUrl, {
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
       });
+
+      const headers = new Headers(corsHeaders());
+      headers.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");
+      headers.set("Cache-Control", "public, max-age=3600");
+
+      return new Response(upstream.body, { status: upstream.status, headers });
     }
 
-    // Optional signature enforcement
-    if (env.REQUIRE_SIGNATURE === 'true') {
-      if (!exp || !sig) {
-        return new Response(JSON.stringify({ error: 'Signed URL required' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-      const now = Math.floor(Date.now() / 1000);
-      if (Number(exp) < now) {
-        return new Response(JSON.stringify({ error: 'Signed URL expired' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-    }
-
-    try {
-      // 1. Get video info from Node.js API
-      const apiRes = await fetch(`${env.API_BASE_URL}/api/videos/uuid/${uuid}`);
-      if (!apiRes.ok) {
-        return new Response(JSON.stringify({ error: 'Video not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-      const video = await apiRes.json() as any;
-
-      const m3u8List: string[] = video.m3u8Links || [];
-      if (m3u8List.length === 0) {
-        return new Response(JSON.stringify({ error: 'No stream available' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-
-      // Quality selection logic
-      let originalM3u8 = m3u8List[0]; // default best
-
-      if (quality) {
-        const matched = m3u8List.find((link: string) =>
-          link.includes(`${quality}p`) || link.includes(quality)
-        );
-        if (matched) originalM3u8 = matched;
-      }
-
-      // 2. Fetch original m3u8
-      const m3u8Res = await fetch(originalM3u8, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://xhamster.com/'
-        }
-      });
-
-      if (!m3u8Res.ok) {
-        return new Response('Failed to fetch stream', { status: 502, headers: corsHeaders });
-      }
-
-      let playlist = await m3u8Res.text();
-
-      // 3. Rewrite segment URLs so they go through this Worker
-      const workerOrigin = url.origin;
-      playlist = playlist.replace(/(https?:\/\/[^\s"]+\.ts)/g, (match) => {
-        return `${workerOrigin}/api/media/segment?url=${encodeURIComponent(match)}&uuid=${uuid}`;
-      });
-
-      // Also handle relative paths
-      playlist = playlist.replace(/^([^#\s].+\.ts)$/gm, (match) => {
-        const absolute = new URL(match, originalM3u8).href;
-        return `${workerOrigin}/api/media/segment?url=${encodeURIComponent(absolute)}&uuid=${uuid}`;
-      });
-
-      return new Response(playlist, {
-        headers: {
-          'Content-Type': 'application/vnd.apple.mpegurl',
-          'Cache-Control': 'no-cache',
-          ...corsHeaders
-        }
-      });
-    } catch (err: any) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-  }
+    return new Response("Not found", { status: 404, headers: corsHeaders() });
+  },
 };

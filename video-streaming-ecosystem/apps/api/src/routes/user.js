@@ -4,98 +4,100 @@ import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
-async function callScraper(endpoint, body, timeoutMs = 120000) {
-  const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+const SCRAPER_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
 
-  // Early health ping to awaken Render scraper
-  fetch(`${scraperUrl}/health`).catch(() => {});
-
+async function callScraper(path, body) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), 120000);
 
   try {
-    const response = await fetch(`${scraperUrl}${endpoint}`, {
+    const res = await fetch(`${SCRAPER_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || data.detail || 'Scrape failed');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || data.detail || 'Scrape failed');
+      err.status = res.status;
+      throw err;
     }
     return data;
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('Scraper is waking up or taking too long. Please try again in a minute.');
-    }
-    throw err;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
 }
 
-// User apni scraped videos dekh sake
+// GET /api/user/my-videos
 router.get('/my-videos', protect, async (req, res) => {
   try {
     const videos = await prisma.video.findMany({
       where: { scrapedById: BigInt(req.user.userId) },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        uuid: true,
-        title: true,
-        slug: true,
-        thumbnail: true,
-        duration: true,
-        views: true,
-        status: true,
-        channelName: true,
-        createdAt: true,
-      },
     });
-    res.json(videos);
+    res.json(
+      videos.map((v) => ({
+        uuid: v.uuid,
+        title: v.title,
+        slug: v.slug,
+        thumbnail: v.thumbnail,
+        duration: v.duration,
+        views: Number(v.views || 0),
+        sourceViews: v.sourceViews,
+        channelName: v.channelName,
+        channelLogo: v.channelLogo,
+        status: v.status,
+        createdAt: v.createdAt,
+      }))
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// User scrape trigger (single ya listing)
+// POST /api/user/scrape  { url, max_videos? }
 router.post('/scrape', protect, async (req, res) => {
   try {
-    const { url, max_videos = 15 } = req.body;
+    const { url, max_videos = 20 } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
 
-    const isListing = !url.includes('/videos/') && !url.includes('/video/');
-    const endpoint = isListing ? '/scrape/listing' : '/scrape/single';
-    const body = isListing ? { url, max_videos } : { url };
+    const isListing = Number(max_videos) > 1;
 
-    const data = await callScraper(endpoint, body, 120000);
+    let data;
+    if (isListing) {
+      data = await callScraper('/scrape/listing', {
+        url,
+        max_videos: Math.min(Number(max_videos) || 20, 50),
+      });
+    } else {
+      data = await callScraper('/scrape/single', { url });
+    }
 
-    // scraped_by update (single case)
-    if (data.uuid) {
+    // Attach scrapedById for results that have uuid
+    if (Array.isArray(data.results)) {
+      const uuids = data.results.filter((r) => r.uuid).map((r) => r.uuid);
+      if (uuids.length) {
+        await prisma.video.updateMany({
+          where: { uuid: { in: uuids } },
+          data: { scrapedById: BigInt(req.user.userId) },
+        });
+      }
+    } else if (data.uuid) {
       await prisma.video.updateMany({
         where: { uuid: data.uuid },
         data: { scrapedById: BigInt(req.user.userId) },
       });
     }
 
-    // listing case
-    if (data.results) {
-      for (const item of data.results) {
-        if (item.uuid) {
-          await prisma.video.updateMany({
-            where: { uuid: item.uuid },
-            data: { scrapedById: BigInt(req.user.userId) },
-          });
-        }
-      }
-    }
-
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.name === 'AbortError') {
+      return res.status(504).json({
+        error: 'Scraper is waking up or taking too long. Please try again in a minute.',
+      });
+    }
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

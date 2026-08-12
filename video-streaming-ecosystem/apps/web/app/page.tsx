@@ -1,81 +1,100 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { VideoCard } from "@/components/video-card";
 import { VideoCardSkeleton } from "@/components/video-card-skeleton";
+import { EmptyState } from "@/components/empty-state";
+import { cn } from "@/lib/utils";
+import { Sparkles, TrendingUp, Crown } from "lucide-react";
 
-interface Video {
-  uuid: string;
-  title: string;
-  slug: string;
-  thumbnail: string | null;
-  duration: number;
-  views: number;
-  sourceViews?: string | null;
-  channelName?: string | null;
-}
+type Filter = "latest" | "trending" | "featured";
 
 export default function HomePage() {
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("latest");
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-        const res = await fetch(`${apiUrl}/api/videos?limit=24`);
-        if (!res.ok) throw new Error("Failed to load videos");
+        const res = await fetch(`${apiUrl}/api/videos?limit=24&sort=${filter}`);
         const json = await res.json();
         setVideos(json.data || []);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        console.error(err);
+        setVideos([]);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, []);
+  }, [filter]);
+
+  const chips: { key: Filter; label: string; icon: any }[] = [
+    { key: "latest", label: "Latest", icon: Sparkles },
+    { key: "trending", label: "Trending", icon: TrendingUp },
+    { key: "featured", label: "Featured", icon: Crown },
+  ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8">
-      {/* Hero */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-10"
-      >
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-          Discover Premium Content
-        </h1>
-        <p className="mt-2 text-muted-foreground">
-          Clean, fast, and ads-free streaming experience
-        </p>
-      </motion.div>
+    <div className="min-h-screen bg-[#F5F5F7] dark:bg-black">
+      <div className="mx-auto max-w-7xl px-4 pb-16 pt-28">
+        {/* Hero */}
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-neutral-900 dark:text-white sm:text-5xl">
+            Discover clean streams
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            Curated videos, no clutter. Stream what you love in crystal-clear quality.
+          </p>
+        </div>
 
-      {/* Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <VideoCardSkeleton key={i} />
-          ))}
+        {/* Filter chips */}
+        <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+          {chips.map(({ key, label, icon: Icon }) => {
+            const active = filter === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition",
+                  active
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : "border border-black/5 bg-white text-neutral-600 hover:bg-neutral-50 dark:border-white/10 dark:bg-zinc-900 dark:text-neutral-300 dark:hover:bg-zinc-800"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            );
+          })}
         </div>
-      ) : error ? (
-        <div className="glass-card p-12 text-center">
-          <p className="text-muted-foreground">{error}</p>
-        </div>
-      ) : videos.length === 0 ? (
-        <div className="glass-card p-12 text-center">
-          <p className="text-muted-foreground">No videos found</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {videos.map((video, i) => (
-            <VideoCard key={video.uuid} video={video} index={i} />
-          ))}
-        </div>
-      )}
+
+        {/* Grid / states */}
+        {loading ? (
+          <div>
+            <p className="mb-4 text-sm font-medium text-neutral-500">Loading more for you</p>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <VideoCardSkeleton key={i} />
+              ))}
+            </div>
+          </div>
+        ) : videos.length === 0 ? (
+          <div className="mx-auto max-w-md">
+            <EmptyState />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {videos.map((video) => (
+              <VideoCard key={video.uuid} video={video} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

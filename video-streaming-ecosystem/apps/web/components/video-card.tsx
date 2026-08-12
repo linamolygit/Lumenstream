@@ -1,139 +1,136 @@
 "use client";
 
+import { useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion } from "framer-motion";
-import { Play, Eye } from "lucide-react";
-import { useState, useRef } from "react";
-import { formatDuration, cn } from "@/lib/utils";
+import { MoreVertical, BadgeCheck } from "lucide-react";
+import { formatDuration } from "@/lib/utils";
 
-interface VideoCardProps {
-  video: {
-    uuid: string;
-    title: string;
-    slug: string;
-    thumbnail: string | null;
-    duration: number;
-    views: number;
-    sourceViews?: string | null;
-    channelName?: string | null;
-    sprite?: string | null;
-    previewVideos?: string[] | null;
-  };
-  index?: number;
+function formatViews(views?: number | string | null) {
+  if (views == null) return "0 views";
+  if (typeof views === "string")
+    return views.toLowerCase().includes("view") ? views : `${views} views`;
+  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
+  if (views >= 1_000) return `${Math.round(views / 1_000)}K views`;
+  return `${views} views`;
 }
 
-export function VideoCard({ video, index = 0 }: VideoCardProps) {
-  const [isHovering, setIsHovering] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+function timeAgo(date?: string) {
+  if (!date) return "";
+  const days = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "1 day ago";
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return "1 week ago";
+  return `${Math.floor(days / 7)} weeks ago`;
+}
 
-  const previewUrl = video.previewVideos?.[0] || null;
+export function VideoCard({ video }: { video: any }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [hover, setHover] = useState(false);
 
-  const handleMouseEnter = () => {
-    setIsHovering(true);
-    if (videoRef.current && previewUrl) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
+  const previewSrc: string | undefined =
+    (Array.isArray(video.previewVideos) && video.previewVideos[0]) ||
+    (Array.isArray(video.preview_videos) && video.preview_videos[0]) ||
+    undefined;
+
+  const onEnter = () => {
+    setHover(true);
+    const el = videoRef.current;
+    if (el && previewSrc) {
+      el.currentTime = 0;
+      el.play().catch(() => {});
     }
   };
 
-  const handleMouseLeave = () => {
-    setIsHovering(false);
-    if (videoRef.current) {
-      videoRef.current.pause();
+  const onLeave = () => {
+    setHover(false);
+    const el = videoRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.4 }}
-      whileHover={{ y: -6 }}
-      className="group"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <Link href={`/watch/${video.slug}`}>
-        <div className="glass-card overflow-hidden transition-all duration-300 hover:shadow-glass-lg">
-          {/* Thumbnail / Preview */}
-          <div className="relative aspect-video overflow-hidden bg-muted">
-            {/* Normal Thumbnail */}
-            {video.thumbnail ? (
-              <Image
-                src={video.thumbnail}
-                alt={video.title}
-                fill
-                className={cn(
-                  "object-cover transition-opacity duration-300",
-                  isHovering && previewUrl ? "opacity-0" : "opacity-100"
-                )}
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                unoptimized
-              />
-            ) : (
-              <div className="w-full h-full bg-muted flex items-center justify-center">
-                <Play className="h-12 w-12 text-muted-foreground" />
-              </div>
-            )}
+    <Link href={`/watch/${video.slug}`} className="group block">
+      <article className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:border-white/10 dark:bg-zinc-900">
+        <div
+          className="relative aspect-video overflow-hidden bg-neutral-100 dark:bg-zinc-800"
+          onMouseEnter={onEnter}
+          onMouseLeave={onLeave}
+        >
+          {/* Static thumb */}
+          {video.thumbnail ? (
+            <Image
+              src={video.thumbnail}
+              alt={video.title || ""}
+              fill
+              unoptimized
+              className={`object-cover transition duration-300 ${
+                hover && previewSrc
+                  ? "opacity-0"
+                  : "opacity-100 group-hover:scale-[1.03]"
+              }`}
+              sizes="(max-width:768px) 100vw, 25vw"
+            />
+          ) : null}
 
-            {/* Preview Video on Hover */}
-            {previewUrl && (
-              <video
-                ref={videoRef}
-                src={previewUrl}
-                muted
-                loop
-                playsInline
-                className={cn(
-                  "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-                  isHovering ? "opacity-100" : "opacity-0"
-                )}
-              />
-            )}
+          {/* Hover preview MP4 */}
+          {previewSrc && (
+            <video
+              ref={videoRef}
+              src={previewSrc}
+              muted
+              loop
+              playsInline
+              preload="none"
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
+                hover ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          )}
 
-            {/* Sprite fallback */}
-            {!previewUrl && video.sprite && isHovering && (
-              <div
-                className="absolute inset-0 bg-cover bg-center"
-                style={{
-                  backgroundImage: `url(${video.sprite})`,
-                }}
-              />
-            )}
+          {/* Optional sprite fallback strip (if no mp4 preview) */}
+          {!previewSrc && video.sprite && hover && (
+            <div
+              className="absolute inset-0 bg-cover bg-left"
+              style={{ backgroundImage: `url(${video.sprite})` }}
+            />
+          )}
 
-            {/* Duration */}
-            <div className="absolute bottom-2 right-2 px-2 py-1 rounded-lg bg-black/70 text-white text-xs font-medium backdrop-blur-sm z-10">
-              {formatDuration(video.duration)}
-            </div>
+          <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
+            {formatDuration(video.duration || 0)}
+          </span>
+        </div>
 
-            {/* Play overlay */}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center z-10">
-              <div className="opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 duration-300">
-                <div className="h-14 w-14 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
-                  <Play className="h-6 w-6 text-white fill-white ml-1" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Info */}
-          <div className="p-4">
-            <h3 className="font-medium text-sm line-clamp-2 leading-snug group-hover:text-primary transition-colors">
+        <div className="p-3">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-neutral-900 dark:text-white">
               {video.title}
             </h3>
-            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-              {video.channelName && (
-                <span className="truncate max-w-[120px]">{video.channelName}</span>
-              )}
-              <span className="flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                {video.sourceViews || video.views?.toLocaleString()}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={(e) => e.preventDefault()}
+              className="shrink-0 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/10"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
           </div>
+
+          <div className="mt-2 flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="truncate">
+              {video.channelName || video.channel || "Unknown"}
+            </span>
+            <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+          </div>
+
+          <p className="mt-1 text-xs text-neutral-400">
+            {formatViews(video.sourceViews || video.views)}
+            {video.createdAt ? ` • ${timeAgo(video.createdAt)}` : ""}
+          </p>
         </div>
-      </Link>
-    </motion.div>
+      </article>
+    </Link>
   );
 }

@@ -1,110 +1,161 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 
-interface User {
+type User = {
   id: string;
   name: string;
   email: string;
-  role: string;
-}
+  role: "user" | "admin" | string;
+};
 
-interface AuthContextType {
+type AuthContextValue = {
   user: User | null;
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
-}
+  refreshUser: () => Promise<void>;
+  updateProfile: (name: string) => Promise<User>;
+};
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const TOKEN_KEY = "lumenstream_token";
+const USER_KEY = "lumenstream_user";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
-    const saved = localStorage.getItem("token");
-    if (saved) {
-      setToken(saved);
-      fetchUser(saved);
-    } else {
-      setLoading(false);
-    }
+    try {
+      const t = localStorage.getItem(TOKEN_KEY) || localStorage.getItem("token");
+      const u = localStorage.getItem(USER_KEY);
+      if (t) {
+        setToken(t);
+        if (u) setUser(JSON.parse(u));
+      }
+    } catch {}
+    setLoading(false);
   }, []);
 
-  const fetchUser = async (tok: string) => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-      const res = await fetch(`${apiUrl}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${tok}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data);
-      } else {
-        localStorage.removeItem("token");
-        setToken(null);
-      }
-    } catch {
-      localStorage.removeItem("token");
-    } finally {
-      setLoading(false);
-    }
+  const persist = (t: string, u: User) => {
+    localStorage.setItem(TOKEN_KEY, t);
+    localStorage.setItem("token", t); // fallback compat
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    setToken(t);
+    setUser(u);
   };
 
-  const login = async (email: string, password: string) => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-    const res = await fetch(`${apiUrl}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Login failed");
-
-    localStorage.setItem("token", data.token);
-    setToken(data.token);
-    setUser(data.user);
-    router.push(data.user.role === "admin" ? "/admin" : "/");
-  };
-
-  const register = async (name: string, email: string, password: string) => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-    const res = await fetch(`${apiUrl}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Registration failed");
-
-    localStorage.setItem("token", data.token);
-    setToken(data.token);
-    setUser(data.user);
-    router.push("/");
-  };
-
-  const logout = () => {
+  const clear = () => {
+    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem("token");
+    localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
-    router.push("/sign-in");
   };
 
-  return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await fetch(`${api}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Login failed");
+      persist(data.token, data.user);
+      router.push(data.user.role === "admin" ? "/admin" : "/dashboard");
+    },
+    [api, router]
   );
+
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      const res = await fetch(`${api}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Registration failed");
+      persist(data.token, data.user);
+    },
+    [api]
+  );
+
+  const logout = useCallback(() => {
+    clear();
+    router.push("/sign-in");
+  }, [router]);
+
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    const res = await fetch(`${api}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      clear();
+      return;
+    }
+    const u = await res.json();
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    setUser(u);
+  }, [api, token]);
+
+  const updateProfile = useCallback(
+    async (name: string) => {
+      if (!token) throw new Error("Not authenticated");
+      const res = await fetch(`${api}/api/auth/profile`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Update failed");
+      localStorage.setItem(USER_KEY, JSON.stringify(data));
+      setUser(data);
+      return data as User;
+    },
+    [api, token]
+  );
+
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      loading,
+      login,
+      register,
+      logout,
+      refreshUser,
+      updateProfile,
+    }),
+    [user, token, loading, login, register, logout, refreshUser, updateProfile]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => {
+export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
-};
+}
