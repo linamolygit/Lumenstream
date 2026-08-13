@@ -42,7 +42,7 @@ class Video(Base):
     duration = Column(Integer, default=0)
     views = Column(BigInteger, default=0)
     source_views = Column(String(50))
-    channel_id = Column(BigInteger, ForeignKey("channels.id"), nullable=True)
+    channel_id = Column(BigInteger, nullable=True)
     channel_name = Column(String(255))
     channel_url = Column(Text)
     channel_logo = Column(Text)
