@@ -60,26 +60,28 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
     let destroyed = false;
 
     async function setup() {
+      const v = videoRef.current;
+      if (!v) return;
       setLoading(true);
       if (src.includes(".m3u8")) {
-        if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = src;
+        if (v.canPlayType("application/vnd.apple.mpegurl")) {
+          v.src = src;
         } else {
           const Hls = (await import("hls.js")).default;
           if (Hls.isSupported()) {
             const hls = new Hls({ enableWorker: true });
             hlsRef.current = hls;
             hls.loadSource(src);
-            hls.attachMedia(video);
+            hls.attachMedia(v);
             hls.on(Hls.Events.ERROR, () => onError?.());
           } else {
-            video.src = src;
+            v.src = src;
           }
         }
       } else {
-        video.src = src;
+        v.src = src;
       }
-      if (!destroyed) video.play().catch(() => {});
+      if (!destroyed) v.play().catch(() => {});
     }
 
     setup();
