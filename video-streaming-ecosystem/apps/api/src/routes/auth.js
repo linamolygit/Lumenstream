@@ -84,12 +84,11 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
     const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1h
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { resetTokenHash, resetTokenExpiry },
+      data: { resetToken, resetTokenExpiry },
     });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -141,10 +140,9 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Invalid token or password (min 8 chars)' });
     }
 
-    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const user = await prisma.user.findFirst({
       where: {
-        resetTokenHash,
+        resetToken: token,
         resetTokenExpiry: { gt: new Date() },
       },
     });
@@ -156,7 +154,7 @@ router.post('/reset-password', async (req, res) => {
       where: { id: user.id },
       data: {
         passwordHash,
-        resetTokenHash: null,
+        resetToken: null,
         resetTokenExpiry: null,
       },
     });
