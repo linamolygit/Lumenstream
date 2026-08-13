@@ -6,27 +6,45 @@ const router = express.Router();
 
 const SCRAPER_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
 
-async function callScraper(path, body) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000);
+async function callScraper(path, body, retries = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const res = await fetch(`${SCRAPER_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-  try {
-    const res = await fetch(`${SCRAPER_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const err = new Error(data.error || data.detail || 'Scrape failed');
-      err.status = res.status;
-      throw err;
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        console.warn(`[User Scraper] Scraper waking up (attempt ${attempt}/${retries}, status ${res.status}). Waiting 4s...`);
+        clearTimeout(timer);
+        await new Promise((r) => setTimeout(r, 4000));
+        continue;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.error || data.detail || `Scrape failed with status ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries && (err.name === 'FetchError' || err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED')) {
+        console.warn(`[User Scraper] Scraper connection error (attempt ${attempt}/${retries}). Waiting 4s...`);
+        await new Promise((r) => setTimeout(r, 4000));
+        continue;
+      }
+    } finally {
+      clearTimeout(timer);
     }
-    return data;
-  } finally {
-    clearTimeout(timer);
   }
+  throw lastError || new Error('Failed to connect to scraper service');
 }
 
 // GET /api/user/my-videos
