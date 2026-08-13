@@ -277,7 +277,7 @@ export default function WatchPage() {
 
                 <button
                   onClick={copyStreamLink}
-                  disabled={!streamUrl || inactive}
+                  disabled={!streamUrl || !!inactive}
                   className={cn(
                     "inline-flex items-center gap-2 rounded-2xl border border-black/5 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200 dark:hover:bg-white/10",
                     copied && "border-emerald-500 text-emerald-600 dark:text-emerald-400"
