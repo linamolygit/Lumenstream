@@ -4,19 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { motion } from "framer-motion";
 import {
-  Copy,
-  Check,
+  ThumbsUp,
+  ThumbsDown,
   Share2,
-  Eye,
-  Clock,
+  Bookmark,
+  Download,
+  MoreHorizontal,
   BadgeCheck,
+  ListFilter,
   ArrowLeft,
   AlertCircle,
   RefreshCw,
+  Check,
 } from "lucide-react";
-import { VideoJSWithQuality } from "@/components/videojs-with-quality";
+import { YoutubePlayer } from "@/components/watch/youtube-player";
 import { formatDuration, cn } from "@/lib/utils";
 
 type Video = {
@@ -37,12 +39,21 @@ type Video = {
 
 function formatViews(views?: number | string | null) {
   if (views == null) return "0 views";
-  if (typeof views === "string") {
+  if (typeof views === "string")
     return views.toLowerCase().includes("view") ? views : `${views} views`;
-  }
   if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
-  if (views >= 1_000) return `${Math.round(views / 1_000)}K views`;
+  if (views >= 1_000) return `${(views / 1_000).toFixed(0)}K views`;
   return `${views} views`;
+}
+
+function timeAgo(date?: string) {
+  if (!date) return "";
+  const d = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+  if (d < 1) return "Today";
+  if (d < 7) return `${d} day${d > 1 ? "s" : ""} ago`;
+  if (d < 30) return `${Math.floor(d / 7)} week${d >= 14 ? "s" : ""} ago`;
+  if (d < 365) return `${Math.floor(d / 30)} month${d >= 60 ? "s" : ""} ago`;
+  return `${Math.floor(d / 365)} year${d >= 730 ? "s" : ""} ago`;
 }
 
 export default function WatchPage() {
@@ -55,114 +66,84 @@ export default function WatchPage() {
   const [error, setError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
   const [playerKey, setPlayerKey] = useState(0);
+  const [descOpen, setDescOpen] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
-  const [watchLinkCopied, setWatchLinkCopied] = useState(false);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  const workerBase = process.env.NEXT_PUBLIC_WORKER_URL || "http://localhost:8787";
-
-  const load = async () => {
-    if (!slug) return;
-    setLoading(true);
-    setError(null);
-    setStreamError(false);
-    try {
-      const res = await fetch(`${apiBase}/api/videos/slug/${encodeURIComponent(slug)}`);
-      if (!res.ok) throw new Error(res.status === 404 ? "Video not found" : "Failed to load video");
-      const data = await res.json();
-      setVideo(data);
-
-      // Record view asynchronously
-      fetch(`${apiBase}/api/videos/${data.uuid}/view`, { method: "POST" }).catch(() => {});
-
-      const relRes = await fetch(`${apiBase}/api/videos?limit=12&sort=latest`);
-      if (relRes.ok) {
-        const relJson = await relRes.json();
-        setRelated((relJson.data || []).filter((v: Video) => v.uuid !== data.uuid).slice(0, 8));
-      }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
-      setVideo(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+  const workerBase = process.env.NEXT_PUBLIC_WORKER_URL || "";
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+    if (!slug) return;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${apiBase}/api/videos/slug/${encodeURIComponent(slug)}`);
+        if (!res.ok) throw new Error(res.status === 404 ? "Video not found" : "Failed to load");
+        const data = await res.json();
+        setVideo(data);
+        fetch(`${apiBase}/api/videos/${data.uuid}/view`, { method: "POST" }).catch(() => {});
+
+        const rel = await fetch(`${apiBase}/api/videos?limit=16&sort=latest`);
+        if (rel.ok) {
+          const j = await rel.json();
+          setRelated((j.data || []).filter((v: Video) => v.uuid !== data.uuid).slice(0, 12));
+        }
+      } catch (e: any) {
+        setError(e.message || "Error");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [slug, apiBase]);
 
   const streamUrl = useMemo(() => {
     if (!video?.uuid) return "";
     return `${workerBase}/api/media?uuid=${video.uuid}`;
   }, [video?.uuid, workerBase]);
 
-  const copyWatchLink = async () => {
-    if (!video) return;
-    const pageUrl = `${window.location.origin}/watch/${video.slug}`;
-    await navigator.clipboard.writeText(pageUrl);
-    setWatchLinkCopied(true);
-    setTimeout(() => setWatchLinkCopied(false), 2000);
-  };
-
-  const copyStreamLink = async () => {
-    if (!streamUrl) return;
-    await navigator.clipboard.writeText(streamUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const sharePage = async () => {
-    if (!video) return;
-    const pageUrl = `${window.location.origin}/watch/${video.slug}`;
+  const share = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
     try {
-      if (navigator.share) {
-        await navigator.share({ title: video.title, url: pageUrl });
-      } else {
-        await navigator.clipboard.writeText(pageUrl);
-        setShareCopied(true);
-        setTimeout(() => setShareCopied(false), 2000);
+      if (navigator.share) await navigator.share({ title: video?.title, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       }
-    } catch {
-      /* cancelled */
-    }
+    } catch {}
   };
 
-  const retryStream = () => {
-    setStreamError(false);
-    setPlayerKey((k) => k + 1);
-  };
-
-  // ---------- Loading ----------
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F5F5F7] dark:bg-black">
-        <div className="mx-auto max-w-7xl px-4 pb-16 pt-28">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="space-y-4 lg:col-span-2">
-              <div className="aspect-video animate-pulse rounded-[24px] bg-white dark:bg-zinc-900" />
-              <div className="h-24 animate-pulse rounded-[24px] bg-white dark:bg-zinc-900" />
-            </div>
-            <div className="h-96 animate-pulse rounded-[24px] bg-white dark:bg-zinc-900" />
+      <div className="min-h-screen bg-[#0f0f0f] px-4 pt-6 md:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-[1800px] grid-cols-1 gap-6 lg:grid-cols-[1fr_402px]">
+          <div className="aspect-video animate-pulse rounded-xl bg-[#272727]" />
+          <div className="hidden space-y-3 lg:block">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex gap-2">
+                <div className="h-[94px] w-[168px] animate-pulse rounded-lg bg-[#272727]" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-full animate-pulse rounded bg-[#272727]" />
+                  <div className="h-3 w-2/3 animate-pulse rounded bg-[#272727]" />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
-  // ---------- Error / Not found ----------
   if (error || !video) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F7] px-4 dark:bg-black">
-        <div className="w-full max-w-md rounded-[24px] border border-black/5 bg-white/80 p-8 text-center backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900">
+      <div className="flex min-h-screen items-center justify-center bg-[#0f0f0f] text-white">
+        <div className="text-center">
           <AlertCircle className="mx-auto h-10 w-10 text-red-500" />
-          <h1 className="mt-4 text-xl font-bold dark:text-white">{error || "Video not found"}</h1>
-          <Link
-            href="/"
-            className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white"
-          >
+          <p className="mt-3 text-lg font-semibold">{error || "Video not found"}</p>
+          <Link href="/" className="mt-4 inline-flex items-center gap-2 text-sm text-sky-400">
             <ArrowLeft className="h-4 w-4" /> Back to Home
           </Link>
         </div>
@@ -170,200 +151,198 @@ export default function WatchPage() {
     );
   }
 
-  const inactive = video.status && video.status !== "active";
+  const inactive = !!(video.status && video.status !== "active");
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] dark:bg-black">
-      <div className="mx-auto max-w-7xl px-4 pb-16 pt-28">
-        {/* ~2/3 player + 1/3 related */}
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          {/* LEFT: Player + info */}
-          <div className="space-y-5 lg:col-span-2">
-            {/* 16:9 player frame */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative overflow-hidden rounded-[24px] border border-black/5 bg-black shadow-[0_12px_40px_rgba(0,0,0,0.15)] dark:border-white/10"
-            >
-              <div className="relative aspect-video bg-black">
-                {/* Error overlay */}
-                {(inactive || streamError) && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 backdrop-blur-sm">
-                    <div className="mx-4 max-w-sm rounded-3xl border border-white/10 bg-white/5 p-6 text-center">
-                      <AlertCircle className="mx-auto h-8 w-8 text-amber-400" />
-                      <p className="mt-3 text-base font-semibold text-white">Stream unavailable</p>
-                      <p className="mt-1 text-sm text-white/60">
-                        This link may have expired or failed to load.
-                      </p>
-                      <button
-                        onClick={retryStream}
-                        className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        Retry
-                      </button>
-                    </div>
+    <div className="min-h-screen bg-[#0f0f0f] text-white">
+      <div className="mx-auto max-w-[1800px] px-3 pb-16 pt-4 md:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_402px] lg:gap-6">
+          {/* LEFT */}
+          <div className="min-w-0">
+            {/* Player */}
+            <div className="relative overflow-hidden rounded-xl bg-black">
+              {(inactive || streamError) && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/90">
+                  <div className="text-center">
+                    <AlertCircle className="mx-auto h-8 w-8 text-amber-400" />
+                    <p className="mt-2 font-medium">Stream unavailable</p>
+                    <button
+                      onClick={() => {
+                        setStreamError(false);
+                        setPlayerKey((k) => k + 1);
+                      }}
+                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm hover:bg-white/20"
+                    >
+                      <RefreshCw className="h-4 w-4" /> Retry
+                    </button>
                   </div>
-                )}
+                </div>
+              )}
+              {!inactive && streamUrl && (
+                <YoutubePlayer
+                  key={playerKey}
+                  src={streamUrl}
+                  poster={video.thumbnail}
+                  title={video.title}
+                  onError={() => setStreamError(true)}
+                />
+              )}
+            </div>
 
-                {/* Real player */}
-                {!inactive && (
-                  <VideoJSWithQuality
-                    key={playerKey}
-                    uuid={video.uuid}
-                    m3u8Links={video.m3u8Links || []}
-                    poster={video.thumbnail}
-                    title={video.title}
-                    onError={() => setStreamError(true)}
-                  />
-                )}
-              </div>
-            </motion.div>
+            {/* Title */}
+            <h1 className="mt-3 text-lg font-bold leading-snug sm:text-xl">{video.title}</h1>
 
-            {/* Title + meta + actions */}
-            <div className="rounded-[24px] border border-black/5 bg-white/80 p-5 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/80 sm:p-6">
-              <h1 className="text-xl font-bold leading-snug text-neutral-900 dark:text-white sm:text-2xl">
-                {video.title}
-              </h1>
-
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-500 dark:text-neutral-400">
-                <span className="inline-flex items-center gap-1.5">
-                  <Eye className="h-4 w-4" />
-                  {formatViews(video.sourceViews || video.views)}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-4 w-4" />
-                  {formatDuration(video.duration || 0)}
-                </span>
-
-                {video.channelName && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
-                    {video.channelLogo ? (
-                      <Image
-                        src={video.channelLogo}
-                        alt=""
-                        width={18}
-                        height={18}
-                        className="rounded-full object-cover"
-                        unoptimized
-                      />
-                    ) : null}
-                    {video.channelName}
-                    <BadgeCheck className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <button
-                  onClick={copyWatchLink}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
-                    watchLinkCopied
-                      ? "bg-emerald-500 text-white"
-                      : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:opacity-95 shadow-md shadow-violet-500/20"
-                  )}
-                >
-                  {watchLinkCopied ? (
-                    <>
-                      <Check className="h-4 w-4" /> Watch Link Copied
-                    </>
+            {/* Channel + actions */}
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-[#272727]">
+                  {video.channelLogo ? (
+                    <Image src={video.channelLogo} alt="" fill className="object-cover" unoptimized />
                   ) : (
-                    <>
-                      <Copy className="h-4 w-4" /> Copy Watch Link
-                    </>
+                    <div className="flex h-full w-full items-center justify-center text-sm font-bold">
+                      {(video.channelName || "U")[0]}
+                    </div>
                   )}
-                </button>
-
-                <button
-                  onClick={copyStreamLink}
-                  disabled={!streamUrl || !!inactive}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border border-black/5 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200 dark:hover:bg-white/10",
-                    copied && "border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                  )}
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-4 w-4 text-emerald-500" /> Stream Link Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" /> Copy Direct Stream Link
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={sharePage}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-black/5 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200 dark:hover:bg-white/10"
-                >
-                  {shareCopied ? (
-                    <>
-                      <Check className="h-4 w-4 text-emerald-500" /> Link Copied
-                    </>
-                  ) : (
-                    <>
-                      <Share2 className="h-4 w-4" /> Share
-                    </>
-                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 truncate text-sm font-semibold">
+                    {video.channelName || "Unknown"}
+                    <BadgeCheck className="h-4 w-4 text-[#aaa]" />
+                  </p>
+                  <p className="text-xs text-[#aaa]">Channel</p>
+                </div>
+                <button className="ml-2 shrink-0 rounded-full bg-white px-3.5 py-2 text-sm font-semibold text-black hover:bg-white/90">
+                  Subscribe
                 </button>
               </div>
 
-              {video.description ? (
-                <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-                  {video.description}
-                </p>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Like / Dislike segmented */}
+                <div className="flex overflow-hidden rounded-full bg-[#272727]">
+                  <button
+                    onClick={() => {
+                      setLiked((v) => !v);
+                      setDisliked(false);
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium hover:bg-[#3f3f3f]",
+                      liked && "text-white"
+                    )}
+                  >
+                    <ThumbsUp className={cn("h-5 w-5", liked && "fill-white")} />
+                    Like
+                  </button>
+                  <div className="w-px self-stretch bg-[#3f3f3f]" />
+                  <button
+                    onClick={() => {
+                      setDisliked((v) => !v);
+                      setLiked(false);
+                    }}
+                    className="px-3.5 py-2 hover:bg-[#3f3f3f]"
+                  >
+                    <ThumbsDown className={cn("h-5 w-5", disliked && "fill-white")} />
+                  </button>
+                </div>
+
+                <button
+                  onClick={share}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#272727] px-3.5 py-2 text-sm font-medium hover:bg-[#3f3f3f]"
+                >
+                  {copied ? <Check className="h-5 w-5" /> : <Share2 className="h-5 w-5" />}
+                  {copied ? "Copied" : "Share"}
+                </button>
+                <button className="inline-flex items-center gap-2 rounded-full bg-[#272727] px-3.5 py-2 text-sm font-medium hover:bg-[#3f3f3f]">
+                  <Bookmark className="h-5 w-5" /> Save
+                </button>
+                <button className="inline-flex items-center gap-2 rounded-full bg-[#272727] px-3.5 py-2 text-sm font-medium hover:bg-[#3f3f3f]">
+                  <Download className="h-5 w-5" /> Download
+                </button>
+                <button className="rounded-full bg-[#272727] p-2 hover:bg-[#3f3f3f]">
+                  <MoreHorizontal className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Description card */}
+            <button
+              type="button"
+              onClick={() => setDescOpen((o) => !o)}
+              className="mt-3 w-full rounded-xl bg-[#272727] p-3 text-left text-sm hover:bg-[#3f3f3f]"
+            >
+              <p className="font-semibold">
+                {formatViews(video.sourceViews || video.views)}
+                {video.createdAt ? ` · ${timeAgo(video.createdAt)}` : ""}
+              </p>
+              <p
+                className={cn(
+                  "mt-1 whitespace-pre-wrap text-[#f1f1f1]",
+                  !descOpen && "line-clamp-2"
+                )}
+              >
+                {video.description || "No description has been added to this video."}
+              </p>
+              <span className="mt-1 inline-block font-semibold">{descOpen ? "Show less" : "...more"}</span>
+            </button>
+
+            {/* Comments (UI shell — wire API later) */}
+            <div className="mt-6">
+              <div className="mb-4 flex items-center gap-6">
+                <h2 className="text-base font-bold">Comments</h2>
+                <button className="inline-flex items-center gap-2 text-sm text-[#f1f1f1]">
+                  <ListFilter className="h-5 w-5" /> Sort by
+                </button>
+              </div>
+              <div className="flex gap-3">
+                <div className="h-10 w-10 shrink-0 rounded-full bg-[#3f3f3f]" />
+                <input
+                  placeholder="Add a comment..."
+                  className="w-full border-b border-[#3f3f3f] bg-transparent py-2 text-sm outline-none placeholder:text-[#aaa] focus:border-white"
+                />
+              </div>
+              <p className="mt-6 text-center text-sm text-[#aaa]">
+                Comments will appear here when enabled.
+              </p>
             </div>
           </div>
 
-          {/* RIGHT: Related sidebar (stacked) */}
-          <aside className="lg:col-span-1">
-            <div className="rounded-[24px] border border-black/5 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/80 sm:p-5">
-              <h2 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-                Related Videos
-              </h2>
-
-              {related.length === 0 ? (
-                <p className="py-8 text-center text-sm text-neutral-500">No related videos yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {related.map((v) => (
-                    <Link
-                      key={v.uuid}
-                      href={`/watch/${v.slug}`}
-                      className="group flex gap-3 rounded-2xl p-2 transition hover:bg-black/[0.03] dark:hover:bg-white/5"
-                    >
-                      <div className="relative h-[72px] w-[128px] shrink-0 overflow-hidden rounded-xl bg-neutral-100 dark:bg-zinc-800">
-                        {v.thumbnail ? (
-                          <Image
-                            src={v.thumbnail}
-                            alt={v.title}
-                            fill
-                            className="object-cover transition group-hover:scale-105"
-                            sizes="128px"
-                            unoptimized
-                          />
-                        ) : null}
-                        <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1 py-0.5 text-[10px] font-medium text-white">
-                          {formatDuration(v.duration || 0)}
-                        </span>
-                      </div>
-                      <div className="min-w-0 flex-1 py-0.5">
-                        <p className="line-clamp-2 text-sm font-semibold leading-snug text-neutral-900 group-hover:text-violet-600 dark:text-white dark:group-hover:text-violet-300">
-                          {v.title}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-neutral-500">
-                          {v.channelName || "Unknown"}
-                        </p>
-                        <p className="text-xs text-neutral-400">
-                          {formatViews(v.sourceViews || v.views)}
-                        </p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+          {/* RIGHT: Related */}
+          <aside className="min-w-0">
+            <div className="space-y-3">
+              {related.map((v) => (
+                <Link
+                  key={v.uuid}
+                  href={`/watch/${v.slug}`}
+                  className="group flex gap-2"
+                >
+                  <div className="relative h-[94px] w-[168px] shrink-0 overflow-hidden rounded-lg bg-[#272727]">
+                    {v.thumbnail && (
+                      <Image
+                        src={v.thumbnail}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="168px"
+                        unoptimized
+                      />
+                    )}
+                    <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[11px] font-medium">
+                      {formatDuration(v.duration || 0)}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-semibold leading-snug group-hover:text-[#f1f1f1]">
+                      {v.title}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-[#aaa]">{v.channelName || "Unknown"}</p>
+                    <p className="text-xs text-[#aaa]">
+                      {formatViews(v.sourceViews || v.views)}
+                      {v.createdAt ? ` · ${timeAgo(v.createdAt)}` : ""}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+              {related.length === 0 && (
+                <p className="py-8 text-center text-sm text-[#aaa]">No related videos</p>
               )}
             </div>
           </aside>
