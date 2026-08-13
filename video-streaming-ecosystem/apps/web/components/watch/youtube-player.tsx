@@ -128,31 +128,31 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
     };
   }, [onError]);
 
-  const togglePlay = useCallback(() => {
+  const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play();
     else v.pause();
     scheduleHide();
-  }, [scheduleHide]);
+  };
 
-  const setVol = useCallback((val: number) => {
+  const setVol = (val: number) => {
     const v = videoRef.current;
     if (!v) return;
     v.volume = val;
     setVolume(val);
     setMuted(val === 0);
     v.muted = val === 0;
-  }, []);
+  };
 
-  const toggleMute = useCallback(() => {
+  const toggleMute = () => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = !v.muted;
     setMuted(v.muted);
-  }, []);
+  };
 
-  const toggleFs = useCallback(async () => {
+  const toggleFs = async () => {
     const wrap = videoRef.current?.parentElement;
     if (!wrap) return;
     if (!document.fullscreenElement) {
@@ -162,9 +162,9 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
       await document.exitFullscreen?.();
       setFs(false);
     }
-  }, []);
+  };
 
-  const pip = useCallback(async () => {
+  const pip = async () => {
     const v = videoRef.current as any;
     if (v?.requestPictureInPicture) {
       if (document.pictureInPictureElement) {
@@ -173,48 +173,63 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
         await v.requestPictureInPicture();
       }
     }
-  }, []);
+  };
 
-  // Keyboard Shortcuts (Space/k = play/pause, m = mute, f = fullscreen, j/l/Left/Right = seek 5s, Up/Down = Volume)
+  // Keyboard Shortcuts (k/space, m, f, c, j/l/arrows)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeTag = (document.activeElement?.tagName || "").toUpperCase();
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(activeTag)) return;
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === "input" || activeTag === "textarea") return;
 
-      const key = e.key.toLowerCase();
-      if (key === " " || key === "k") {
-        e.preventDefault();
-        togglePlay();
-      } else if (key === "f") {
-        e.preventDefault();
-        toggleFs();
-      } else if (key === "m") {
-        e.preventDefault();
-        toggleMute();
-      } else if (key === "arrowleft" || key === "j") {
-        e.preventDefault();
-        if (videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
-      } else if (key === "arrowright" || key === "l") {
-        e.preventDefault();
-        if (videoRef.current) videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + 5);
-      } else if (key === "arrowup") {
-        e.preventDefault();
-        setVol(Math.min(1, volume + 0.1));
-      } else if (key === "arrowdown") {
-        e.preventDefault();
-        setVol(Math.max(0, volume - 0.1));
-      } else if (key === "c") {
-        e.preventDefault();
-        setCcOn((c) => !c);
-      } else if (key === "p") {
-        e.preventDefault();
-        pip();
+      const v = videoRef.current;
+      if (!v) return;
+
+      switch (e.key.toLowerCase()) {
+        case "k":
+        case " ":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "m":
+          e.preventDefault();
+          toggleMute();
+          break;
+        case "f":
+          e.preventDefault();
+          toggleFs();
+          break;
+        case "c":
+          e.preventDefault();
+          setCcOn((prev) => !prev);
+          break;
+        case "j":
+        case "arrowleft":
+          e.preventDefault();
+          v.currentTime = Math.max(0, v.currentTime - 10);
+          scheduleHide();
+          break;
+        case "l":
+        case "arrowright":
+          e.preventDefault();
+          v.currentTime = Math.min(duration, v.currentTime + 10);
+          scheduleHide();
+          break;
+        case "arrowup":
+          e.preventDefault();
+          setVol(Math.min(1, v.volume + 0.1));
+          scheduleHide();
+          break;
+        case "arrowdown":
+          e.preventDefault();
+          setVol(Math.max(0, v.volume - 0.1));
+          scheduleHide();
+          break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [togglePlay, toggleFs, toggleMute, setVol, pip, duration, volume]);
+  }, [duration, scheduleHide]);
 
   const seekRatio = (clientX: number) => {
     const el = barRef.current;
@@ -327,7 +342,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
                 </svg>
               ) : (
                 <svg fill="none" height="32" viewBox="0 0 36 36" width="32">
-                  <path d="M 17 8.6 L 10.89 4.99 C 9.39 4.11 7.5 5.19 7.5 6.93 L 7.5 29.06 C 9.39 31.88 10.89 31 L 17 27.4 L 33 18 Z" fill="white"></path>
+                  <path d="M 17 8.6 L 10.89 4.99 C 9.39 4.11 7.5 5.19 7.5 6.93 L 7.5 29.06 C 7.5 30.8 9.39 31.88 10.89 31 L 17 27.4 L 17 27.4 C 17 27.4 17 27.4 17 27.4 L 17 8.6 L 17 8.6 C 17 8.6 17 8.6 17 8.6 V 27.4 L 33 18 L 17 8.6 Z" fill="white"></path>
                 </svg>
               )}
             </button>
@@ -336,7 +351,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
             <button
               type="button"
               className="p-1.5 transition hover:opacity-80 focus:outline-none"
-              title="Next (SHIFT+n)"
+              title="Next (Shift+N)"
               onClick={() => {
                 if (videoRef.current) videoRef.current.currentTime = Math.min(duration, current + 10);
               }}
@@ -408,7 +423,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
               </div>
             </button>
 
-            {/* Subtitles / CC (c) */}
+            {/* Subtitles / CC */}
             <button
               type="button"
               onClick={() => setCcOn((c) => !c)}
@@ -420,7 +435,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
               </svg>
             </button>
 
-            {/* Settings Gear */}
+            {/* Settings */}
             <button
               type="button"
               className="p-1.5 transition hover:opacity-80 focus:outline-none"
@@ -431,7 +446,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
               </svg>
             </button>
 
-            {/* Cinema Mode (t) */}
+            {/* Cinema Mode */}
             <button
               type="button"
               className="p-1.5 transition hover:opacity-80 focus:outline-none"
@@ -442,19 +457,19 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
               </svg>
             </button>
 
-            {/* Picture-in-Picture (p) */}
+            {/* Picture-in-Picture */}
             <button
               type="button"
               onClick={pip}
               className="p-1.5 transition hover:opacity-80 focus:outline-none"
-              title="Picture-in-picture (p)"
+              title="Picture-in-picture"
             >
               <svg fill="currentColor" height="22" viewBox="0 0 24 24" width="22">
                 <path d="M1 6a2 2 0 012-2h18a2 2 0 012 2v12a2 2 0 01-2 2H3a2 2 0 01-2-2V6Zm2 0v12h18V6H3Zm16 6h-6v4h6v-4Z"></path>
               </svg>
             </button>
 
-            {/* Fullscreen Button (f) */}
+            {/* Fullscreen Button */}
             <button
               type="button"
               onClick={toggleFs}
