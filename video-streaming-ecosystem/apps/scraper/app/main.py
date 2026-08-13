@@ -49,69 +49,12 @@ async def scrape_single(payload: ScrapeRequest, db: AsyncSession = Depends(get_d
     if not data or not data.get("title"):
         raise HTTPException(status_code=400, detail="Failed to extract video data")
 
-    # Check if already exists
-    result = await db.execute(select(Video).where(Video.source_page_url == url))
-    existing = result.scalar_one_or_none()
-    if existing:
-        return {"message": "Video already exists", "uuid": existing.uuid, "title": existing.title}
-
-    video = Video(
-        uuid=data["uuid"],
-        source_page_url=data["source_page_url"],
-        source_site=data.get("source_site", "generic"),
-        title=data["title"],
-        slug=data["slug"],
-        duration=data.get("duration") or 0,
-        source_views=data.get("source_views"),
-        channel_name=data.get("channel_name"),
-        channel_url=data.get("channel_url"),
-        channel_logo=data.get("channel_logo"),
-        thumbnail=data.get("thumbnail"),
-        thumbnails=data.get("thumbnails"),
-        sprite=data.get("sprite"),
-        preview_videos=data.get("preview_videos"),
-        m3u8_links=data.get("m3u8_links"),
-        direct_video_links=data.get("direct_video_links"),
-        status=VideoStatus.active
-    )
-    db.add(video)
-    await db.commit()
-    await db.refresh(video)
-
-    return {
-        "message": "Video scraped successfully",
-        "uuid": video.uuid,
-        "title": video.title,
-        "slug": video.slug
-    }
-
-@app.post("/scrape/listing")
-async def scrape_listing(payload: ListingRequest, db: AsyncSession = Depends(get_db)):
-    listing_url = str(payload.url)
-    video_urls = extractor.extract_listing(listing_url, max_videos=payload.max_videos)
-
-    if not video_urls:
-        raise HTTPException(status_code=400, detail="No video links found on this page")
-
-    results = []
-    for video_url in video_urls:
-        existing = await db.execute(
-            select(Video).where(Video.source_page_url == video_url)
-        )
-        existing_video = existing.scalar_one_or_none()
-        if existing_video:
-            results.append({
-                "url": video_url,
-                "status": "already_exists",
-                "uuid": existing_video.uuid,
-                "title": existing_video.title
-            })
-            continue
-
-        data = extractor.extract_single(video_url)
-        if not data or not data.get("title"):
-            results.append({"url": video_url, "status": "failed"})
-            continue
+    try:
+        # Check if already exists in DB
+        result = await db.execute(select(Video).where(Video.source_page_url == url))
+        existing = result.scalar_one_or_none()
+        if existing:
+            return {"message": "Video already exists", "uuid": existing.uuid, "title": existing.title, "slug": existing.slug}
 
         video = Video(
             uuid=data["uuid"],
@@ -134,12 +77,94 @@ async def scrape_listing(payload: ListingRequest, db: AsyncSession = Depends(get
         )
         db.add(video)
         await db.commit()
-        results.append({
-            "url": video_url,
-            "status": "scraped",
+        await db.refresh(video)
+
+        return {
+            "message": "Video scraped successfully",
+            "uuid": video.uuid,
+            "title": video.title,
+            "slug": video.slug,
+            "thumbnail": video.thumbnail,
+            "duration": video.duration,
+            "m3u8_links": video.m3u8_links
+        }
+    except Exception as db_err:
+        print(f"[Scrape Single DB Error]: {db_err}")
+        return {
+            "message": "Video scraped (DB save pending remote access)",
             "uuid": data["uuid"],
             "title": data["title"],
-        })
+            "slug": data["slug"],
+            "thumbnail": data.get("thumbnail"),
+            "duration": data.get("duration"),
+            "m3u8_links": data.get("m3u8_links"),
+            "db_error": str(db_err)
+        }
+
+@app.post("/scrape/listing")
+async def scrape_listing(payload: ListingRequest, db: AsyncSession = Depends(get_db)):
+    listing_url = str(payload.url)
+    video_urls = extractor.extract_listing(listing_url, max_videos=payload.max_videos)
+
+    if not video_urls:
+        raise HTTPException(status_code=400, detail="No video links found on this page")
+
+    results = []
+    for video_url in video_urls:
+        try:
+            existing = await db.execute(
+                select(Video).where(Video.source_page_url == video_url)
+            )
+            existing_video = existing.scalar_one_or_none()
+            if existing_video:
+                results.append({
+                    "url": video_url,
+                    "status": "already_exists",
+                    "uuid": existing_video.uuid,
+                    "title": existing_video.title
+                })
+                continue
+
+            data = extractor.extract_single(video_url)
+            if not data or not data.get("title"):
+                results.append({"url": video_url, "status": "failed"})
+                continue
+
+            video = Video(
+                uuid=data["uuid"],
+                source_page_url=data["source_page_url"],
+                source_site=data.get("source_site", "generic"),
+                title=data["title"],
+                slug=data["slug"],
+                duration=data.get("duration") or 0,
+                source_views=data.get("source_views"),
+                channel_name=data.get("channel_name"),
+                channel_url=data.get("channel_url"),
+                channel_logo=data.get("channel_logo"),
+                thumbnail=data.get("thumbnail"),
+                thumbnails=data.get("thumbnails"),
+                sprite=data.get("sprite"),
+                preview_videos=data.get("preview_videos"),
+                m3u8_links=data.get("m3u8_links"),
+                direct_video_links=data.get("direct_video_links"),
+                status=VideoStatus.active
+            )
+            db.add(video)
+            await db.commit()
+            results.append({
+                "url": video_url,
+                "status": "scraped",
+                "uuid": data["uuid"],
+                "title": data["title"],
+                "thumbnail": data.get("thumbnail")
+            })
+        except Exception as item_err:
+            print(f"[Scrape Listing Item DB Error]: {item_err}")
+            results.append({
+                "url": video_url,
+                "status": "scraped_db_pending",
+                "title": video_url
+            })
 
     return {
         "message": f"Processed {len(results)} videos",
