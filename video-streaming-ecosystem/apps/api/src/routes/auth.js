@@ -47,6 +47,32 @@ router.post('/register', async (req, res) => {
     });
 
     const token = signToken(user);
+
+    if (process.env.SMTP_HOST) {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      transporter.sendMail({
+        from: `"LumenStream" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@lumenstream.com'}>`,
+        to: user.email,
+        subject: 'Welcome to LumenStream!',
+        html: `
+          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border-radius: 12px; background: #0f172a; color: #fff;">
+            <h2 style="color: #a855f7;">Welcome to LumenStream ✨</h2>
+            <p>Hi ${user.name || 'there'},</p>
+            <p>Your account has been successfully created. Enjoy fast, ads-free VOD streaming!</p>
+          </div>
+        `,
+      }).catch((e) => console.error('Registration Email Error:', e));
+    }
+
     res.status(201).json({ token, user: publicUser(user) });
   } catch (err) {
     res.status(500).json({ error: err.message });
