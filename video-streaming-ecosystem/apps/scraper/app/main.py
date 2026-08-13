@@ -30,8 +30,12 @@ class BulkRefreshRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("[startup] DB tables ready")
+    except Exception as e:
+        print(f"[startup] DB not ready yet — scrape endpoints will error until DB is accessible: {e}")
 
 @app.get("/health")
 async def health():
