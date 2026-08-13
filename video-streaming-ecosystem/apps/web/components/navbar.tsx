@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -24,10 +25,22 @@ export function Navbar() {
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-black/50">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold text-white">
-              L
-            </div>
-            <span className="text-[15px] font-semibold tracking-tight">LumenStream</span>
+            <Image
+              src="/logo-dark.png"
+              alt="LumenStream"
+              width={160}
+              height={40}
+              priority
+              className="hidden dark:block h-8 md:h-9 w-auto object-contain"
+            />
+            <Image
+              src="/logo-light.png"
+              alt="LumenStream"
+              width={160}
+              height={40}
+              priority
+              className="block dark:hidden h-8 md:h-9 w-auto object-contain"
+            />
           </Link>
 
           {/* Center nav */}

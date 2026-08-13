@@ -8,8 +8,18 @@ import { AuthProvider } from "@/context/auth-context";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "MediaHoster Pro",
-  description: "Premium ads-free video streaming",
+  title: "LumenStream - Premium Ads-Free VOD Streaming",
+  description: "Next-gen enterprise VOD streaming ecosystem powered by serverless media proxy.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
+  },
+  openGraph: {
+    title: "LumenStream - Premium Ads-Free VOD Streaming",
+    description: "Next-gen enterprise VOD streaming ecosystem.",
+    images: ["/logo-icon-dark.png"],
+  },
 };
 
 export default function RootLayout({

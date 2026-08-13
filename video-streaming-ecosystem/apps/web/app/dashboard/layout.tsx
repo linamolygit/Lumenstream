@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -59,13 +60,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Sidebar */}
         <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col border-r border-black/[0.04] bg-white/80 px-3 py-5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/80 md:flex">
           <Link href="/" className="mb-7 flex items-center gap-2.5 px-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-sm font-bold text-white shadow-md shadow-violet-500/30">
-              L
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-neutral-900 dark:text-white">LumenStream</p>
-              <p className="text-[10px] text-neutral-400">Stream · Share · Grow</p>
-            </div>
+            <Image
+              src="/logo-dark.png"
+              alt="LumenStream"
+              width={150}
+              height={38}
+              priority
+              className="hidden dark:block h-8 w-auto object-contain"
+            />
+            <Image
+              src="/logo-light.png"
+              alt="LumenStream"
+              width={150}
+              height={38}
+              priority
+              className="block dark:hidden h-8 w-auto object-contain"
+            />
           </Link>
 
           <nav className="flex flex-1 flex-col gap-1">
