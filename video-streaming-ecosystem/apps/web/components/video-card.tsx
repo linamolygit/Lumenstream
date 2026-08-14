@@ -53,7 +53,7 @@ export function VideoCard({ video }: { video: any }) {
   };
 
   return (
-    <Link href={`/watch/${video.slug}`} className="group block">
+    <Link href={`/watch/${video.slug}`} prefetch={true} className="group block">
       <article className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:border-white/10 dark:bg-zinc-900">
         <div
           className="relative aspect-video overflow-hidden bg-neutral-100 dark:bg-zinc-800"

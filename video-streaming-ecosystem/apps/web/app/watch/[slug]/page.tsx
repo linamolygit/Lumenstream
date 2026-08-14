@@ -372,6 +372,7 @@ export default function WatchPage() {
                 <Link
                   key={v.uuid}
                   href={`/watch/${v.slug}`}
+                  prefetch={true}
                   className="group flex gap-2"
                 >
                   <div className="relative h-[94px] w-[168px] shrink-0 overflow-hidden rounded-lg bg-neutral-200 dark:bg-[#272727]">

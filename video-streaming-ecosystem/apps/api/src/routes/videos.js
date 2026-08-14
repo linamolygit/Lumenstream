@@ -29,6 +29,7 @@ function mapVideo(v) {
 
 // GET /api/videos?limit=24&sort=latest|trending|featured&q=...
 router.get('/', async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
     const limit = Math.min(parseInt(req.query.limit || '24', 10), 100);
     const page = Math.max(parseInt(req.query.page || '1', 10), 1);
@@ -73,6 +74,7 @@ router.get('/', async (req, res) => {
 
 // GET /api/videos/search
 router.get('/search', async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
     const q = (req.query.q || '').trim();
     const page = parseInt(req.query.page || '1', 10);
@@ -109,14 +111,15 @@ router.get('/search', async (req, res) => {
 
 // GET /api/videos/slug/:slug
 router.get('/slug/:slug', async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=1800, stale-while-revalidate=86400');
   try {
     const video = await prisma.video.findFirst({
       where: { slug: req.params.slug },
     });
     if (!video) return res.status(404).json({ error: 'Video not found' });
 
-    // View count increment
-    await prisma.video.update({
+    // View count increment asynchronously
+    prisma.video.update({
       where: { id: video.id },
       data: { views: { increment: 1 } },
     }).catch(() => null);
@@ -129,6 +132,7 @@ router.get('/slug/:slug', async (req, res) => {
 
 // GET /api/videos/uuid/:uuid
 router.get('/uuid/:uuid', async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
     const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
     if (!video) return res.status(404).json({ error: 'Video not found' });
