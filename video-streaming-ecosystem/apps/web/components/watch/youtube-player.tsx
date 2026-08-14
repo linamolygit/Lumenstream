@@ -43,7 +43,9 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
   const [speed, setSpeed] = useState(1);
   const [quality, setQuality] = useState("Auto (1080p)");
 
-  // HLS attach
+  const blobUrlRef = useRef<string | null>(null);
+
+  // HLS / Blob Stream attach for Top-Level Stream Security
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -66,7 +68,7 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
               const hls = new Hls({ enableWorker: true });
               hlsRef.current = hls;
               hls.loadSource(src);
-              hls.attachMedia(v);
+              hls.attachMedia(v); // hls.js attaches via MediaSource Blob URL automatically!
               hls.on(Hls.Events.ERROR, () => onError?.());
             } else {
               v.src = src;
@@ -76,7 +78,22 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
           }
         }
       } else {
-        v.src = src;
+        // Secure Blob URL for MP4 / Direct Stream
+        try {
+          const res = await fetch(src);
+          if (res.ok) {
+            const blob = await res.blob();
+            if (!destroyed) {
+              const blobUrl = URL.createObjectURL(blob);
+              blobUrlRef.current = blobUrl;
+              v.src = blobUrl;
+            }
+          } else {
+            v.src = src;
+          }
+        } catch {
+          v.src = src;
+        }
       }
       if (!destroyed) v.play().catch(() => {});
     }
@@ -84,6 +101,10 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
     setup();
     return () => {
       destroyed = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };

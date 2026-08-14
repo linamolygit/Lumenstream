@@ -126,19 +126,7 @@ router.get('/search', async (req, res) => {
 
 // GET /api/videos/slug/:slug
 router.get('/slug/:slug', async (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=1800, stale-while-revalidate=86400');
   try {
-    const slugKey = `video_slug_${req.params.slug}`;
-    const cached = await getCache(slugKey);
-    if (cached) {
-      // Async view increment
-      prisma.video.update({
-        where: { uuid: cached.uuid },
-        data: { views: { increment: 1 } },
-      }).catch(() => null);
-      return res.json(cached);
-    }
-
     const video = await prisma.video.findFirst({
       where: { slug: req.params.slug },
     });
@@ -150,8 +138,15 @@ router.get('/slug/:slug', async (req, res) => {
       data: { views: { increment: 1 } },
     }).catch(() => null);
 
-    const result = mapVideo(video);
-    await setCache(slugKey, result, 120);
+    const likesCount = await prisma.userLike.count({
+      where: { videoUuid: video.uuid },
+    });
+
+    const result = {
+      ...mapVideo(video),
+      views: Number(video.views) + 1,
+      likesCount,
+    };
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
