@@ -116,49 +116,102 @@ export default {
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
-      const video = (await metaRes.json()) as { m3u8Links?: string[]; status?: string };
-      if (video.status && video.status !== "active") {
+      const video = (await metaRes.json()) as {
+        m3u8Links?: any;
+        directVideoLinks?: any;
+        status?: string;
+      };
+
+      if (video.status === "dead") {
         return new Response(JSON.stringify({ error: "Stream unavailable" }), {
           status: 410,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
 
-      const m3u8 = Array.isArray(video.m3u8Links) ? video.m3u8Links[0] : null;
-      if (!m3u8) {
-        return new Response(JSON.stringify({ error: "No stream" }), {
+      // Collect all candidate stream URLs from m3u8Links and directVideoLinks
+      const candidateLinks: string[] = [];
+
+      let m3u8List = video.m3u8Links;
+      if (typeof m3u8List === "string") {
+        try { m3u8List = JSON.parse(m3u8List); } catch { m3u8List = [m3u8List]; }
+      }
+      if (Array.isArray(m3u8List)) {
+        for (const item of m3u8List) {
+          if (typeof item === "string" && item.trim()) candidateLinks.push(item.trim());
+          else if (item && typeof item === "object" && item.url) candidateLinks.push(item.url);
+        }
+      }
+
+      let directList = video.directVideoLinks;
+      if (typeof directList === "string") {
+        try { directList = JSON.parse(directList); } catch { directList = [directList]; }
+      }
+      if (Array.isArray(directList)) {
+        for (const item of directList) {
+          if (typeof item === "string" && item.trim()) candidateLinks.push(item.trim());
+          else if (item && typeof item === "object" && item.url) candidateLinks.push(item.url);
+        }
+      }
+
+      if (!candidateLinks.length) {
+        return new Response(JSON.stringify({ error: "No stream URLs available" }), {
           status: 404,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
 
-      const upstream = await fetch(m3u8, {
-        headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
-      });
-      if (!upstream.ok) {
-        return new Response(JSON.stringify({ error: "Upstream failed" }), {
+      // Try fetching candidate links until one succeeds
+      let upstreamRes: Response | null = null;
+      let workingLink = "";
+      for (const link of candidateLinks) {
+        try {
+          const res = await fetch(link, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              Accept: "*/*",
+            },
+          });
+          if (res.ok) {
+            upstreamRes = res;
+            workingLink = link;
+            break;
+          }
+        } catch {}
+      }
+
+      if (!upstreamRes) {
+        return new Response(JSON.stringify({ error: "Upstream stream links failed" }), {
           status: 502,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
 
-      const text = await upstream.text();
-      // preserve signed query on segment rewrites
-      const signedQuery = new URLSearchParams();
-      if (exp) signedQuery.set("exp", exp);
-      if (sig) signedQuery.set("sig", sig);
-      const qs = signedQuery.toString();
+      const contentType = upstreamRes.headers.get("Content-Type") || "";
+      if (contentType.includes("mpegurl") || workingLink.includes(".m3u8")) {
+        const text = await upstreamRes.text();
+        const signedQuery = new URLSearchParams();
+        if (exp) signedQuery.set("exp", exp);
+        if (sig) signedQuery.set("sig", sig);
+        const qs = signedQuery.toString();
 
-      const rewritten = rewriteM3u8(text, url.origin, uuid, qs);
+        const rewritten = rewriteM3u8(text, url.origin, uuid, qs);
 
-      return new Response(rewritten, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/vnd.apple.mpegurl",
-          "Cache-Control": "public, max-age=30, s-maxage=300, stale-while-revalidate=86400",
-          ...corsHeaders(),
-        },
-      });
+        return new Response(rewritten, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/vnd.apple.mpegurl",
+            "Cache-Control": "public, max-age=30, s-maxage=300, stale-while-revalidate=86400",
+            ...corsHeaders(),
+          },
+        });
+      } else {
+        // Direct MP4 or video stream pipe
+        const headers = new Headers(corsHeaders());
+        headers.set("Content-Type", contentType || "video/mp4");
+        headers.set("Cache-Control", "public, max-age=3600");
+        return new Response(upstreamRes.body, { status: 200, headers });
+      }
     }
 
     // GET /api/segment?uuid=&u=&exp=&sig=

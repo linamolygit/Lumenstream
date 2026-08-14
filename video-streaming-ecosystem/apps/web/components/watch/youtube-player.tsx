@@ -411,15 +411,35 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
 
           {/* Right Controls */}
           <div className="flex items-center gap-1">
-            {/* Autoplay Toggle */}
+            {/* Autoplay Toggle (YouTube exact style with Play/Pause inside knob) */}
             <button
               type="button"
               onClick={() => setAutoPlayOn((a) => !a)}
-              className="p-1.5 transition hover:opacity-80 focus:outline-none"
+              className="p-1.5 transition hover:opacity-90 focus:outline-none"
               title={autoPlayOn ? "Auto-play is on" : "Auto-play is off"}
             >
-              <div className={cn("relative h-4 w-8 rounded-full transition-colors", autoPlayOn ? "bg-white/40" : "bg-white/10")}>
-                <div className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform", autoPlayOn ? "left-4" : "left-0.5")} />
+              <div
+                className={cn(
+                  "relative flex h-5 w-10 items-center rounded-full transition-colors duration-200",
+                  autoPlayOn ? "bg-white/40" : "bg-white/20"
+                )}
+              >
+                <div
+                  className={cn(
+                    "absolute top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white transition-all duration-200 shadow",
+                    autoPlayOn ? "left-5.5" : "left-0.5"
+                  )}
+                >
+                  {autoPlayOn ? (
+                    <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 fill-black ml-0.5">
+                      <path d="M 3.5 2.5 L 9.5 6 L 3.5 9.5 Z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 fill-black">
+                      <path d="M 3.5 3 L 5 3 L 5 9 L 3.5 9 Z M 7 3 L 8.5 3 L 8.5 9 L 7 9 Z" />
+                    </svg>
+                  )}
+                </div>
               </div>
             </button>
 

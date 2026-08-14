@@ -194,7 +194,7 @@ export default function WatchPage() {
     );
   }
 
-  const inactive = !!(video.status && video.status !== "active");
+  const inactive = video.status === "dead";
 
   return (
     <div className="min-h-screen bg-background text-foreground dark:bg-[#0f0f0f] dark:text-white">
