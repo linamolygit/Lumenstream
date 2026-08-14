@@ -1,425 +1,331 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion } from "framer-motion";
 import {
-  Search,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  ExternalLink,
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-} from "lucide-react";
+  MagnifyingGlass as SearchIcon,
+  VideoCamera as Film,
+  PencilSimple as EditIcon,
+  Trash as DeleteIcon,
+  LinkSimple as Link2Icon,
+  ArrowsClockwise as RefreshCwIcon,
+  Eye as EyeIcon,
+  DotsThreeVertical as MoreVertical,
+  CheckCircle,
+  XCircle,
+  CaretLeft as ChevronLeft,
+  CaretRight as ChevronRight,
+  Funnel as FilterIcon,
+  Plus as PlusIcon,
+} from "@phosphor-icons/react";
 import { useAuth } from "@/context/auth-context";
 import { formatDuration, cn } from "@/lib/utils";
+import { formatViews } from "@/lib/format-views";
 
 type Video = {
+  id: string;
   uuid: string;
   title: string;
   slug: string;
   thumbnail?: string | null;
   duration?: number;
-  views?: number;
+  views: number;
   sourceViews?: string | null;
-  status: string; // active | hidden | dead | processing
   channelName?: string | null;
   channelLogo?: string | null;
+  status: string;
   createdAt?: string;
 };
 
-import { formatViews } from "@/lib/format-views";
-
-function StatusPill({ status }: { status: string }) {
-  const s = (status || "").toLowerCase();
-  if (s === "active") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Active
-      </span>
-    );
-  }
-  if (s === "hidden") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500 dark:bg-white/10 dark:text-neutral-300">
-        <span className="h-1.5 w-1.5 rounded-full bg-neutral-400" />
-        Hidden
-      </span>
-    );
-  }
-  if (s === "dead") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-        Dead Link
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700">
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-      {status || "Unknown"}
-    </span>
-  );
-}
-
-const PAGE_SIZE = 10;
-
-export default function AdminAllVideosPage() {
+export default function AllVideosPage() {
   const { token } = useAuth();
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "hidden" | "dead"
-  >("all");
-  const [page, setPage] = useState(1);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "views">("newest");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteTarget, setDeleteTarget] = useState<Video | null>(null);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL;
+  const ITEMS_PER_PAGE = 30;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-  const load = async () => {
-    if (!token) return;
+  const fetchVideos = async () => {
     setLoading(true);
     try {
+      const authToken = token || localStorage.getItem("lumenstream_token") || localStorage.getItem("token");
       const res = await fetch(`${apiBase}/api/admin/videos`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
-      const data = await res.json();
-      setVideos(Array.isArray(data) ? data : data.data || []);
-    } catch (err) {
-      console.error(err);
-      setVideos([]);
-    } finally {
-      setLoading(false);
-    }
+      if (res.ok) {
+        const data = await res.json();
+        setVideos(data || []);
+      }
+    } catch {}
+    setLoading(false);
   };
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    fetchVideos();
+  }, [apiBase, token]);
 
   const filtered = useMemo(() => {
-    let list = [...videos];
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (v) =>
-          v.title?.toLowerCase().includes(q) ||
+    return videos
+      .filter((v) => {
+        if (statusFilter !== "all" && v.status.toLowerCase() !== statusFilter) return false;
+        if (!search.trim()) return true;
+        const q = search.toLowerCase();
+        return (
+          v.title.toLowerCase().includes(q) ||
+          v.uuid.toLowerCase().includes(q) ||
+          v.slug?.toLowerCase().includes(q) ||
           v.channelName?.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== "all") {
-      list = list.filter(
-        (v) => (v.status || "").toLowerCase() === statusFilter
-      );
-    }
-    return list;
-  }, [videos, search, statusFilter]);
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === "newest") return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        if (sortBy === "oldest") return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+        if (sortBy === "views") return (b.views || 0) - (a.views || 0);
+        return 0;
+      });
+  }, [videos, search, statusFilter, sortBy]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageSafe = Math.min(page, totalPages);
-  const pageItems = filtered.slice(
-    (pageSafe - 1) * PAGE_SIZE,
-    pageSafe * PAGE_SIZE
-  );
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
+  const paginated = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(start, start + ITEMS_PER_PAGE);
+  }, [filtered, currentPage]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, statusFilter]);
-
-  const toggleVisibility = async (video: Video) => {
-    if (!token) return;
-    const next = video.status === "hidden" ? "active" : "hidden";
-    setBusyId(video.uuid);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      const res = await fetch(
-        `${apiBase}/api/admin/videos/${video.uuid}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ status: next }),
-        }
-      );
-      if (!res.ok) throw new Error("Failed");
-      setVideos((prev) =>
-        prev.map((v) => (v.uuid === video.uuid ? { ...v, status: next } : v))
-      );
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setBusyId(null);
-    }
+      const authToken = token || localStorage.getItem("lumenstream_token") || localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/admin/videos/${deleteTarget.uuid}`, {
+        method: "DELETE",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      if (res.ok) {
+        setVideos((prev) => prev.filter((v) => v.uuid !== deleteTarget.uuid));
+      }
+    } catch {}
+    setDeleteTarget(null);
   };
 
-  const refreshStream = async (uuid: string) => {
-    if (!token) return;
-    setBusyId(uuid);
+  const handleToggleStatus = async (v: Video) => {
+    const newStatus = v.status === "active" ? "hidden" : "active";
     try {
-      await fetch(`${apiBase}/api/admin/videos/${uuid}/refresh`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+      const authToken = token || localStorage.getItem("lumenstream_token") || localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/admin/videos/${v.uuid}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({ status: newStatus }),
       });
-      await load();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setBusyId(null);
-    }
+      if (res.ok) {
+        setVideos((prev) => prev.map((item) => (item.uuid === v.uuid ? { ...item, status: newStatus } : item)));
+      }
+    } catch {}
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white sm:text-3xl">
-          All Videos
-        </h1>
-        <p className="mt-1.5 text-[15px] text-neutral-500 dark:text-neutral-400">
-          View, manage, and monitor all hosted videos on the platform.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">All Videos ({filtered.length})</h1>
+          <p className="mt-1 text-xs text-neutral-400">Content management portal (30 videos per page).</p>
+        </div>
+        <Link
+          href="/admin/scrape"
+          className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-violet-500 active:scale-95 shadow-lg shadow-violet-600/25"
+        >
+          <PlusIcon className="h-4 w-4" /> Scrape New Videos
+        </Link>
       </div>
 
-      {/* Toolbar */}
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+      {/* Search & Filters Controls */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-white/[0.08] bg-black/40 p-4">
+        {/* Search Bar */}
         <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <SearchIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
           <input
+            type="text"
+            placeholder="Search videos by title, UUID, channel, or slug..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search videos by title or channel..."
-            className="w-full rounded-2xl border border-violet-300/70 bg-white py-3 pl-11 pr-4 text-sm outline-none ring-violet-500/20 focus:ring-2 dark:border-violet-500/30 dark:bg-zinc-900 dark:text-white"
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full rounded-xl border border-white/10 bg-white/[0.04] pl-10 pr-4 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-violet-500/50"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as typeof statusFilter)
-              }
-              className="appearance-none rounded-2xl border border-black/5 bg-white py-2.5 pl-9 pr-8 text-sm font-medium text-neutral-600 outline-none dark:border-white/10 dark:bg-zinc-900 dark:text-neutral-300"
-            >
-              <option value="all">Status: All</option>
-              <option value="active">Active</option>
-              <option value="hidden">Hidden</option>
-              <option value="dead">Dead Link</option>
-            </select>
-          </div>
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white outline-none focus:border-violet-500/50"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="processing">Processing</option>
+            <option value="dead">Dead</option>
+            <option value="hidden">Hidden</option>
+          </select>
 
-          <span className="hidden text-sm text-neutral-400 sm:inline">
-            {filtered.length.toLocaleString()} videos found
-          </span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white outline-none focus:border-violet-500/50"
+          >
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+            <option value="views">Sort: Most Viewed</option>
+          </select>
         </div>
       </div>
 
-      {/* Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="overflow-hidden rounded-[20px] border border-black/[0.04] bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900"
-      >
-        {/* Header row — desktop only */}
-        <div className="hidden grid-cols-12 gap-3 border-b border-black/[0.04] px-5 py-3 text-xs font-medium text-neutral-400 dark:border-white/10 lg:grid">
-          <div className="col-span-4">Thumbnail / Title</div>
-          <div className="col-span-1">Duration</div>
-          <div className="col-span-1">Views</div>
-          <div className="col-span-2">Status</div>
-          <div className="col-span-2">Channel</div>
-          <div className="col-span-2 text-right">Actions</div>
+      {/* Loading Skeleton */}
+      {loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 15 }).map((_, i) => (
+            <div key={i} className="aspect-video animate-pulse rounded-2xl bg-white/5" />
+          ))}
         </div>
+      )}
 
-        {loading ? (
-          <div className="space-y-3 p-5">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-14 animate-pulse rounded-xl bg-neutral-100 dark:bg-zinc-800"
-              />
-            ))}
-          </div>
-        ) : pageItems.length === 0 ? (
-          <p className="p-12 text-center text-sm text-neutral-500">
-            No videos found
-          </p>
-        ) : (
-          <ul className="divide-y divide-black/[0.04] dark:divide-white/5">
-            {pageItems.map((video) => {
-              const busy = busyId === video.uuid;
-              const isHidden = video.status === "hidden";
-
-              return (
-                <li
-                  key={video.uuid}
-                  className="grid grid-cols-1 items-center gap-3 px-4 py-3 transition hover:bg-violet-500/[0.03] dark:hover:bg-white/[0.03] sm:px-5 lg:grid-cols-12"
-                >
-                  {/* Thumb + title */}
-                  <div className="flex items-center gap-3 lg:col-span-4">
-                    <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-xl bg-neutral-100 dark:bg-zinc-800">
-                      {video.thumbnail ? (
-                        <Image
-                          src={video.thumbnail}
-                          alt=""
-                          fill
-                          unoptimized
-                          className="object-cover"
-                          sizes="80px"
-                        />
-                      ) : null}
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 text-[9px] text-white lg:hidden">
-                        {formatDuration(video.duration || 0)}
-                      </span>
-                    </div>
-                    <p className="line-clamp-2 text-sm font-semibold text-neutral-900 dark:text-white">
-                      {video.title}
-                    </p>
-                  </div>
-
-                  {/* Duration */}
-                  <div className="hidden text-sm text-neutral-500 lg:col-span-1 lg:block">
-                    {formatDuration(video.duration || 0)}
-                  </div>
-
-                  {/* Views */}
-                  <div className="hidden text-sm text-neutral-500 lg:col-span-1 lg:block">
-                    {formatViews(video.sourceViews || video.views)}
-                  </div>
-
-                  {/* Status */}
-                  <div className="lg:col-span-2">
-                    <StatusPill status={video.status} />
-                  </div>
-
-                  {/* Channel */}
-                  <div className="flex items-center gap-2 lg:col-span-2">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-100 text-[10px] font-bold text-violet-700 dark:bg-violet-500/20">
-                      {video.channelLogo ? (
-                        <Image
-                          src={video.channelLogo}
-                          alt=""
-                          width={28}
-                          height={28}
-                          unoptimized
-                          className="object-cover"
-                        />
-                      ) : (
-                        (video.channelName || "?").charAt(0)
-                      )}
-                    </div>
-                    <span className="truncate text-sm text-neutral-600 dark:text-neutral-300">
-                      {video.channelName || "Unknown"}
-                    </span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center justify-end gap-1.5 lg:col-span-2">
-                    {/* Hide / Show */}
-                    <button
-                      type="button"
-                      title={isHidden ? "Show video" : "Hide video"}
-                      disabled={busy}
-                      onClick={() => toggleVisibility(video)}
-                      className="rounded-xl border border-black/5 p-2 text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-800 disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
-                    >
-                      {isHidden ? (
-                        <Eye className="h-3.5 w-3.5" />
-                      ) : (
-                        <EyeOff className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-
-                    {/* Refresh */}
-                    <button
-                      type="button"
-                      title="Refresh stream"
-                      disabled={busy}
-                      onClick={() => refreshStream(video.uuid)}
-                      className="rounded-xl border border-black/5 p-2 text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-800 disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
-                    >
-                      <RefreshCw
-                        className={cn("h-3.5 w-3.5", busy && "animate-spin")}
-                      />
-                    </button>
-
-                    {/* Open watch page */}
-                    <Link
-                      href={`/watch/${video.slug}`}
-                      target="_blank"
-                      title="Open watch page"
-                      className="rounded-xl border border-black/5 p-2 text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-800 dark:border-white/10 dark:hover:bg-white/5"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {/* Pagination footer */}
-        <div className="flex flex-col items-center justify-between gap-3 border-t border-black/[0.04] px-5 py-3 text-xs text-neutral-400 dark:border-white/10 sm:flex-row">
-          <span>
-            Showing{" "}
-            {filtered.length === 0 ? 0 : (pageSafe - 1) * PAGE_SIZE + 1} to{" "}
-            {Math.min(pageSafe * PAGE_SIZE, filtered.length)} of{" "}
-            {filtered.length} results
-          </span>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={pageSafe <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-xl border border-black/5 p-2 disabled:opacity-40 dark:border-white/10"
+      {/* Videos 30 Cards Grid */}
+      {!loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {paginated.map((v) => (
+            <div
+              key={v.uuid}
+              className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-black/40 transition hover:border-white/20 hover:bg-white/[0.02]"
             >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-
-            {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
-              const n = i + 1;
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setPage(n)}
+              {/* Thumbnail */}
+              <div className="relative aspect-video w-full overflow-hidden bg-neutral-900">
+                {v.thumbnail ? (
+                  <Image src={v.thumbnail} alt="" fill className="object-cover transition duration-300 group-hover:scale-105" unoptimized />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-neutral-600">No Image</div>
+                )}
+                <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {formatDuration(v.duration || 0)}
+                </span>
+                <span
                   className={cn(
-                    "h-8 min-w-[2rem] rounded-xl px-2 text-sm font-medium",
-                    pageSafe === n
-                      ? "bg-violet-600 text-white"
-                      : "hover:bg-black/5 dark:hover:bg-white/5"
+                    "absolute top-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-bold text-white uppercase",
+                    v.status === "active" ? "bg-emerald-600/90" : "bg-red-600/90"
                   )}
                 >
-                  {n}
-                </button>
-              );
-            })}
+                  {v.status}
+                </span>
+              </div>
 
-            {totalPages > 5 && (
-              <span className="px-1 text-neutral-400">… {totalPages}</span>
-            )}
+              {/* Card Meta */}
+              <div className="flex flex-1 flex-col p-3.5 justify-between">
+                <div>
+                  <h3 className="line-clamp-2 text-xs font-bold leading-snug text-white group-hover:text-violet-400">
+                    {v.title}
+                  </h3>
+                  <p className="mt-1.5 truncate text-[11px] font-medium text-neutral-400">{v.channelName || "Unknown Channel"}</p>
+                  <p className="mt-0.5 text-[11px] text-neutral-500">
+                    {formatViews(v.views, "views")}
+                    {v.sourceViews ? ` (${formatViews(v.sourceViews)} src)` : ""}
+                  </p>
+                </div>
 
+                {/* Card Quick Actions */}
+                <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-2.5">
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/watch/${v.slug || v.uuid}`}
+                      target="_blank"
+                      className="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white hover:text-black"
+                      title="Watch Video"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                    </Link>
+                    <button
+                      onClick={() => handleToggleStatus(v)}
+                      className="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white hover:text-black"
+                      title={v.status === "active" ? "Hide Video" : "Activate Video"}
+                    >
+                      {v.status === "active" ? <CheckCircle className="h-4 w-4 text-emerald-400" /> : <XCircle className="h-4 w-4 text-red-400" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setDeleteTarget(v)}
+                    className="rounded-lg p-1.5 text-red-400 transition hover:bg-red-500/20"
+                    title="Delete Video"
+                  >
+                    <DeleteIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-white/[0.08] pt-6">
+          <p className="text-xs text-neutral-400">
+            Showing Page <span className="font-bold text-white">{currentPage}</span> of{" "}
+            <span className="font-bold text-white">{totalPages}</span>
+          </p>
+          <div className="flex items-center gap-2">
             <button
-              type="button"
-              disabled={pageSafe >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-xl border border-black/5 p-2 disabled:opacity-40 dark:border-white/10"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white hover:text-black disabled:opacity-40"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" /> Prev
+            </button>
+            <span className="px-2 text-xs font-bold text-violet-400">{currentPage}</span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white hover:text-black disabled:opacity-40"
+            >
+              Next <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
-      </motion.div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-6 text-white shadow-2xl">
+            <h3 className="text-base font-bold text-white">Permanently Delete Video?</h3>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-400 line-clamp-2">{deleteTarget.title}</p>
+            <p className="mt-1 text-[10px] font-mono text-red-400">UUID: {deleteTarget.uuid}</p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-neutral-300 hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-500 transition active:scale-95 shadow-lg shadow-red-600/25"
+              >
+                Delete Video
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

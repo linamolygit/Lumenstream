@@ -5,17 +5,22 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
-  Film,
-  CheckCircle2,
+  VideoCamera as Film,
+  CheckCircle,
   Eye,
-  Link2,
-  Users,
-  MoreHorizontal,
+  LinkSimple as Link2,
+  UsersThree as Users,
+  DotsThree as MoreHorizontal,
   Clock,
   XCircle,
-} from "lucide-react";
+  MagnifyingGlassPlus as ScrapeIcon,
+  ChatText as CommentsIcon,
+  Plus as PlusIcon,
+  Lightning as QuickIcon,
+} from "@phosphor-icons/react";
 import { useAuth } from "@/context/auth-context";
 import { formatDuration, cn } from "@/lib/utils";
+import { formatViews } from "@/lib/format-views";
 
 type RecentVideo = {
   uuid: string;
@@ -23,6 +28,7 @@ type RecentVideo = {
   slug?: string;
   thumbnail?: string | null;
   duration?: number;
+  views?: number;
   status: string;
   channelName?: string | null;
   channelLogo?: string | null;
@@ -33,14 +39,10 @@ type Stats = {
   totalVideos: number;
   activeVideos: number;
   deadVideos: number;
-  hiddenVideos: number;
-  processingVideos: number;
   totalViews: number;
   totalUsers: number;
   recentVideos: RecentVideo[];
 };
-
-import { formatViews } from "@/lib/format-views";
 
 function formatDate(date?: string) {
   if (!date) return "—";
@@ -57,266 +59,258 @@ function StatusBadge({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
   if (s === "active") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-        <CheckCircle2 className="h-3.5 w-3.5" /> Active
-      </span>
-    );
-  }
-  if (s === "processing") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-        <Clock className="h-3.5 w-3.5" /> Processing
-      </span>
-    );
-  }
-  if (s === "dead") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400">
-        <XCircle className="h-3.5 w-3.5" /> Dead
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        Active
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500 dark:bg-white/10">
-      {status}
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400">
+      <XCircle className="h-3.5 w-3.5" />
+      Dead
     </span>
   );
 }
 
-export default function AdminDashboardPage() {
+export default function AdminOverviewPage() {
   const { token } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      if (!token) return;
-      try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to load stats");
-        const data = await res.json();
-        setStats(data);
-      } catch (err) {
-        console.error(err);
-        setStats(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [token]);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-  const cards = [
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const authToken = token || localStorage.getItem("lumenstream_token") || localStorage.getItem("token");
+        const res = await fetch(`${apiBase}/api/admin/stats`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStats(data);
+        }
+      } catch {}
+      setLoading(false);
+    })();
+  }, [apiBase, token]);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded-lg bg-white/5" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/5" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const statCards = [
     {
-      label: "Total Videos",
-      value: stats?.totalVideos ?? 0,
+      title: "Total Videos",
+      value: stats?.totalVideos?.toLocaleString() ?? "0",
+      sub: `${stats?.activeVideos ?? 0} active`,
       icon: Film,
-      hint: "All videos in library",
-      danger: false,
-      raw: true,
+      color: "text-violet-400",
+      bg: "bg-violet-500/10 border-violet-500/20",
     },
     {
-      label: "Active",
-      value: stats?.activeVideos ?? 0,
-      icon: CheckCircle2,
-      hint: "Ready to stream",
-      danger: false,
-      raw: true,
-    },
-    {
-      label: "Views",
-      value: formatViews(stats?.totalViews ?? 0),
-      icon: Eye,
-      hint: "Across all videos",
-      danger: false,
-      raw: false,
-    },
-    {
-      label: "Dead Links",
-      value: stats?.deadVideos ?? 0,
-      icon: Link2,
-      hint: "Need refresh",
-      danger: true,
-      raw: true,
-    },
-    {
-      label: "Users",
-      value: stats?.totalUsers ?? 0,
+      title: "Total Users",
+      value: stats?.totalUsers?.toLocaleString() ?? "0",
+      sub: "Registered members",
       icon: Users,
-      hint: "Registered accounts",
-      danger: false,
-      raw: true,
+      color: "text-indigo-400",
+      bg: "bg-indigo-500/10 border-indigo-500/20",
+    },
+    {
+      title: "Total Views",
+      value: formatViews(stats?.totalViews ?? 0),
+      sub: "Lumenstream views",
+      icon: Eye,
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10 border-emerald-500/20",
+    },
+    {
+      title: "Active Streams",
+      value: (stats?.activeVideos ?? 0).toLocaleString(),
+      sub: `${stats?.deadVideos ?? 0} dead streams`,
+      icon: Link2,
+      color: "text-amber-400",
+      bg: "bg-amber-500/10 border-amber-500/20",
     },
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white sm:text-3xl">
-          Admin Dashboard
-        </h1>
-        <p className="mt-1.5 text-[15px] text-neutral-500 dark:text-neutral-400">
-          Overview of your video streaming platform and content activity.
-        </p>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {cards.map((card, i) => (
-          <motion.div
-            key={card.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.04 }}
-            className="rounded-[20px] border border-black/[0.04] bg-white p-4 shadow-sm dark:border-white/10 dark:bg-zinc-900 sm:p-5"
+    <div className="space-y-8">
+      {/* Top Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">Overview Dashboard</h1>
+          <p className="mt-1 text-xs text-neutral-400">Real-time stats and controls for Lumenstream SaaS.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/scrape"
+            className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-violet-500 active:scale-95 shadow-lg shadow-violet-600/25"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/10 text-[#A78BFA]">
-              <card.icon className="h-4 w-4" strokeWidth={1.75} />
-            </div>
-            <p className="mt-3 text-sm text-neutral-500">{card.label}</p>
-            <p className="mt-1 text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-              {loading
-                ? "—"
-                : card.raw
-                ? Number(card.value).toLocaleString()
-                : card.value}
-            </p>
-            <p
-              className={cn(
-                "mt-2 text-[11px]",
-                card.danger ? "text-red-500" : "text-emerald-600"
-              )}
-            >
-              {card.hint}
-            </p>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Recently Added table */}
-      <section className="overflow-hidden rounded-[20px] border border-black/[0.04] bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-black/[0.04] px-5 py-4 dark:border-white/10">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
-            Recently Added
-          </h2>
+            <ScrapeIcon className="h-4 w-4" />
+            Scrape Videos
+          </Link>
           <Link
             href="/admin/videos"
-            className="text-sm font-medium text-violet-600 hover:underline"
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white hover:text-black active:scale-95"
           >
-            View all videos →
+            <PlusIcon className="h-4 w-4" />
+            Manage Videos
           </Link>
         </div>
+      </div>
 
-        {/* Table header — desktop */}
-        <div className="hidden grid-cols-12 gap-3 border-b border-black/[0.04] px-5 py-2.5 text-xs font-medium text-neutral-400 dark:border-white/10 md:grid">
-          <div className="col-span-5">Video</div>
-          <div className="col-span-3">Channel</div>
-          <div className="col-span-2">Added</div>
-          <div className="col-span-1">Status</div>
-          <div className="col-span-1 text-right">Actions</div>
+      {/* Top Stat Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {statCards.map((c, i) => {
+          const Icon = c.icon;
+          return (
+            <motion.div
+              key={c.title}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className={cn("rounded-2xl border p-5 transition-all duration-200 hover:border-white/20", c.bg)}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-neutral-400">{c.title}</p>
+                <div className={cn("rounded-xl p-2.5 bg-black/40", c.color)}>
+                  <Icon className="h-5 w-5" />
+                </div>
+              </div>
+              <p className="mt-3 text-2xl font-black tracking-tight text-white">{c.value}</p>
+              <p className="mt-1 text-[11px] font-semibold text-neutral-400">{c.sub}</p>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Quick Actions Bar */}
+      <div className="rounded-2xl border border-white/[0.08] bg-black/40 p-5">
+        <div className="flex items-center gap-2 text-sm font-bold text-white mb-4">
+          <QuickIcon className="h-5 w-5 text-amber-400" />
+          Quick Admin Actions
         </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          <Link
+            href="/admin/scrape"
+            className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-bold text-neutral-200 transition hover:bg-white hover:text-black active:scale-95"
+          >
+            <ScrapeIcon className="h-4 w-4 text-violet-400" />
+            Scrape Batch
+          </Link>
+          <Link
+            href="/admin/manage-stream-links"
+            className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-bold text-neutral-200 transition hover:bg-white hover:text-black active:scale-95"
+          >
+            <Link2 className="h-4 w-4 text-amber-400" />
+            Stream Links
+          </Link>
+          <Link
+            href="/admin/users"
+            className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-bold text-neutral-200 transition hover:bg-white hover:text-black active:scale-95"
+          >
+            <Users className="h-4 w-4 text-indigo-400" />
+            Manage Users
+          </Link>
+          <Link
+            href="/admin/comments"
+            className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-bold text-neutral-200 transition hover:bg-white hover:text-black active:scale-95"
+          >
+            <CommentsIcon className="h-4 w-4 text-emerald-400" />
+            Comments
+          </Link>
+          <Link
+            href="/admin/settings"
+            className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-bold text-neutral-200 transition hover:bg-white hover:text-black active:scale-95"
+          >
+            <Film className="h-4 w-4 text-pink-400" />
+            System Settings
+          </Link>
+        </div>
+      </div>
 
-        {loading ? (
-          <div className="space-y-3 p-5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-14 animate-pulse rounded-xl bg-neutral-100 dark:bg-zinc-800"
-              />
-            ))}
+      {/* Recent Videos Table */}
+      <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/40">
+        <div className="flex items-center justify-between border-b border-white/[0.08] p-4 md:p-5">
+          <div>
+            <h2 className="text-base font-bold text-white">Recently Added Videos</h2>
+            <p className="text-xs text-neutral-400">Latest media entries in your database.</p>
           </div>
-        ) : !stats?.recentVideos?.length ? (
-          <p className="p-10 text-center text-sm text-neutral-500">No videos yet</p>
-        ) : (
-          <ul className="divide-y divide-black/[0.04] dark:divide-white/5">
-            {stats.recentVideos.map((v) => (
-              <li
-                key={v.uuid}
-                className="grid grid-cols-1 items-center gap-3 px-5 py-3 md:grid-cols-12"
-              >
-                {/* Video */}
-                <div className="flex items-center gap-3 md:col-span-5">
-                  <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-xl bg-neutral-100 dark:bg-zinc-800">
-                    {v.thumbnail ? (
-                      <Image
-                        src={v.thumbnail}
-                        alt=""
-                        fill
-                        unoptimized
-                        className="object-cover"
-                        sizes="80px"
-                      />
-                    ) : null}
-                    {!!v.duration && (
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 text-[9px] text-white">
-                        {formatDuration(v.duration)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="line-clamp-2 text-sm font-semibold text-neutral-900 dark:text-white">
-                    {v.title}
-                  </p>
-                </div>
-
-                {/* Channel */}
-                <div className="flex items-center gap-2 md:col-span-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-100 text-[10px] font-bold text-violet-700 dark:bg-violet-500/20">
-                    {v.channelLogo ? (
-                      <Image
-                        src={v.channelLogo}
-                        alt=""
-                        width={28}
-                        height={28}
-                        unoptimized
-                        className="object-cover"
-                      />
-                    ) : (
-                      (v.channelName || "?").charAt(0)
-                    )}
-                  </div>
-                  <span className="truncate text-sm text-neutral-600 dark:text-neutral-300">
-                    {v.channelName || "Unknown"}
-                  </span>
-                </div>
-
-                {/* Date */}
-                <div className="text-xs text-neutral-400 md:col-span-2">
-                  {formatDate(v.createdAt)}
-                </div>
-
-                {/* Status */}
-                <div className="md:col-span-1">
-                  <StatusBadge status={v.status} />
-                </div>
-
-                {/* Actions */}
-                <div className="flex justify-end md:col-span-1">
-                  <Link
-                    href={v.slug ? `/watch/${v.slug}` : "#"}
-                    className="rounded-xl p-2 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-700 dark:hover:bg-white/5"
-                    title="Open watch page"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="flex items-center justify-between border-t border-black/[0.04] px-5 py-3 text-xs text-neutral-400 dark:border-white/10">
-          <span>
-            Showing 1 to {stats?.recentVideos?.length || 0} of{" "}
-            {stats?.totalVideos || 0} results
-          </span>
-          <Link href="/admin/videos" className="font-medium text-violet-600 hover:underline">
-            Open full table →
+          <Link href="/admin/videos" className="text-xs font-bold text-violet-400 hover:underline">
+            View All →
           </Link>
         </div>
-      </section>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-neutral-300">
+            <thead className="border-b border-white/[0.08] bg-white/[0.02] text-[11px] uppercase font-bold text-neutral-400">
+              <tr>
+                <th className="p-4">Video</th>
+                <th className="p-4">Channel</th>
+                <th className="p-4">Duration</th>
+                <th className="p-4">Views</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.04]">
+              {stats?.recentVideos?.map((v) => (
+                <tr key={v.uuid} className="hover:bg-white/[0.02] transition">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-900">
+                        {v.thumbnail && <Image src={v.thumbnail} alt="" fill className="object-cover" unoptimized />}
+                      </div>
+                      <div className="min-w-0 max-w-xs">
+                        <Link href={`/watch/${v.slug || v.uuid}`} target="_blank" className="font-semibold text-white hover:text-violet-400 line-clamp-1">
+                          {v.title}
+                        </Link>
+                        <p className="text-[10px] text-neutral-500 font-mono">{v.uuid}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className="font-medium text-neutral-300">{v.channelName || "Unknown"}</span>
+                  </td>
+                  <td className="p-4 font-mono text-neutral-400">{formatDuration(v.duration || 0)}</td>
+                  <td className="p-4 font-semibold text-white">{formatViews(v.views)}</td>
+                  <td className="p-4">
+                    <StatusBadge status={v.status} />
+                  </td>
+                  <td className="p-4 text-right">
+                    <Link
+                      href={`/watch/${v.slug || v.uuid}`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white hover:text-black transition active:scale-95"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> Watch
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {(!stats?.recentVideos || stats.recentVideos.length === 0) && (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-xs text-neutral-500">
+                    No videos available in database yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

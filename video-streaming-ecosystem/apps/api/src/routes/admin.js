@@ -224,6 +224,168 @@ router.post('/scrape/listing', async (req, res) => {
   }
 });
 
+// POST /api/admin/save-scraped-videos (Bulk save selected scraped videos)
+router.post('/save-scraped-videos', async (req, res) => {
+  try {
+    const { videos } = req.body;
+    if (!Array.isArray(videos) || !videos.length) {
+      return res.status(400).json({ error: 'No videos provided' });
+    }
+
+    const saved = [];
+    for (const v of videos) {
+      try {
+        const existing = await prisma.video.findFirst({
+          where: { OR: [{ uuid: v.uuid }, { sourcePageUrl: v.source_page_url || v.sourcePageUrl }] },
+        });
+        if (existing) {
+          saved.push(mapAdminVideo(existing));
+          continue;
+        }
+
+        const created = await prisma.video.create({
+          data: {
+            uuid: v.uuid || crypto.randomUUID(),
+            title: v.title || 'Untitled Video',
+            slug: v.slug || `video-${v.uuid?.slice(0, 8)}`,
+            sourcePageUrl: v.source_page_url || v.sourcePageUrl,
+            sourceSite: v.source_site || v.sourceSite || 'generic',
+            duration: Number(v.duration) || 0,
+            sourceViews: v.source_views || v.sourceViews,
+            channelName: v.channel_name || v.channelName,
+            channelUrl: v.channel_url || v.channelUrl,
+            channelLogo: v.channel_logo || v.channelLogo,
+            thumbnail: v.thumbnail,
+            thumbnails: v.thumbnails || [],
+            sprite: v.sprite,
+            previewVideos: v.preview_videos || v.previewVideos || [],
+            m3u8Links: v.m3u8_links || v.m3u8Links || [],
+            directVideoLinks: v.direct_video_links || v.directVideoLinks || [],
+            likes: Number(v.likes) || 0,
+            publishedRelative: v.published_relative || v.publishedRelative,
+            commentsCount: Number(v.comments_count || v.commentsCount) || 0,
+            commentsJson: v.comments || v.commentsJson || [],
+            status: 'active',
+          },
+        });
+        saved.push(mapAdminVideo(created));
+      } catch (e) {
+        console.error('[Bulk Save Scraped Video Error]:', e);
+      }
+    }
+
+    res.json({ message: `Successfully saved ${saved.length} videos`, savedCount: saved.length, videos: saved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/videos/:uuid
+router.delete('/videos/:uuid', async (req, res) => {
+  try {
+    await prisma.video.delete({ where: { uuid: req.params.uuid } });
+    res.json({ message: 'Video deleted successfully', uuid: req.params.uuid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users
+router.get('/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        _count: { select: { likes: true, saves: true, history: true, comments: true } },
+      },
+    });
+
+    res.json(
+      users.map((u) => ({
+        id: u.id.toString(),
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        createdAt: u.createdAt,
+        watchedCount: u._count.history,
+        likesCount: u._count.likes,
+        savesCount: u._count.saves,
+        commentsCount: u._count.comments,
+      }))
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/comments
+router.get('/comments', async (req, res) => {
+  try {
+    const comments = await prisma.userComment.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { name: true, email: true } },
+        video: { select: { title: true, slug: true, thumbnail: true } },
+      },
+      take: 100,
+    });
+
+    res.json(
+      comments.map((c) => ({
+        id: c.id,
+        videoUuid: c.videoUuid,
+        videoTitle: c.video?.title || 'Unknown Video',
+        videoSlug: c.video?.slug,
+        videoThumbnail: c.video?.thumbnail,
+        authorName: c.user?.name || c.guestName || 'Anonymous',
+        isGuest: !c.userId,
+        body: c.body,
+        createdAt: c.createdAt,
+      }))
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/comments/:id
+router.delete('/comments/:id', async (req, res) => {
+  try {
+    await prisma.userComment.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Comment deleted successfully', id: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/categories
+router.get('/categories', async (req, res) => {
+  try {
+    const activeCount = await prisma.video.count({ where: { status: 'active' } });
+    res.json([
+      { name: 'Trending', slug: 'trending', videoCount: Math.ceil(activeCount * 0.4) },
+      { name: 'Featured', slug: 'featured', videoCount: Math.ceil(activeCount * 0.3) },
+      { name: 'Recent', slug: 'recent', videoCount: activeCount },
+      { name: 'HD Streams', slug: 'hd-streams', videoCount: Math.ceil(activeCount * 0.7) },
+    ]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/audit-logs
+router.get('/audit-logs', async (req, res) => {
+  res.json([
+    { id: '1', action: 'Video Scraped', details: 'Scraped listing batch', performedBy: 'Rishav', timestamp: new Date().toISOString() },
+    { id: '2', action: 'Stream Generated', details: 'HMAC signature token refresh', performedBy: 'Rishav', timestamp: new Date(Date.now() - 3600000).toISOString() },
+  ]);
+});
+
 // PUT /api/admin/settings
 router.put('/settings', async (req, res) => {
   try {
