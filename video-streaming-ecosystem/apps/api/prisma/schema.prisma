@@ -30,7 +30,11 @@ model User {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  scrapedVideos Video[] @relation("ScrapedBy")
+  scrapedVideos Video[]        @relation("ScrapedBy")
+  likes         UserLike[]
+  saves         UserSave[]
+  history       WatchHistory[]
+  comments      UserComment[]
 
   @@map("users")
 }
@@ -78,6 +82,63 @@ model Video {
   @@index([status, createdAt])
   @@index([status, views])
   @@map("videos")
+}
+
+model UserLike {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  videoUuid String   @map("video_uuid") @db.VarChar(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoUuid])
+  @@index([userId])
+  @@map("user_likes")
+}
+
+model UserSave {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  videoUuid String   @map("video_uuid") @db.VarChar(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoUuid])
+  @@index([userId])
+  @@map("user_saves")
+}
+
+model WatchHistory {
+  id          BigInt   @id @default(autoincrement())
+  userId      BigInt   @map("user_id")
+  videoUuid   String   @map("video_uuid") @db.VarChar(36)
+  progressSec Int      @default(0) @map("progress_sec")
+  durationSec Int      @default(0) @map("duration_sec")
+  watchedAt   DateTime @default(now()) @map("watched_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoUuid])
+  @@index([userId])
+  @@index([watchedAt])
+  @@map("watch_history")
+}
+
+model UserComment {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt?  @map("user_id")
+  videoUuid String   @map("video_uuid") @db.VarChar(36)
+  guestName String?  @map("guest_name") @db.VarChar(60)
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([videoUuid])
+  @@index([userId])
+  @@map("user_comments")
 }
 
 model Setting {

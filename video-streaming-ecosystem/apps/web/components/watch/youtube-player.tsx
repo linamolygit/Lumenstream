@@ -22,7 +22,7 @@ function fmt(t: number) {
 export function YoutubePlayer({ src, poster, title, onError }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer = useRef<number | null>(null);
   const hlsRef = useRef<any>(null);
 
   const [playing, setPlaying] = useState(false);
@@ -90,11 +90,11 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
   }, [src, onError]);
 
   const scheduleHide = useCallback(() => {
-    clearTimeout(hideTimer.current);
+    if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
     setShowControls(true);
-    hideTimer.current = setTimeout(() => {
+    hideTimer.current = window.setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused) setShowControls(false);
-    }, 2800);
+    }, 2800) as unknown as number;
   }, []);
 
   useEffect(() => {

@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Login failed");
       persist(data.token, data.user);
-      router.push(data.user.role === "admin" ? "/admin" : "/dashboard");
+      router.push(data.user.role === "admin" ? "/admin" : "/user/dashboard");
     },
     [api, router]
   );
