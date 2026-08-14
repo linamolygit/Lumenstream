@@ -23,6 +23,11 @@ function mapVideo(v) {
     previewVideos: v.previewVideos,
     m3u8Links: v.m3u8Links,
     directVideoLinks: v.directVideoLinks,
+    likes: v.likes || 0,
+    publishedAt: v.publishedAt,
+    publishedRelative: v.publishedRelative,
+    commentsCount: v.commentsCount || 0,
+    commentsJson: v.commentsJson,
     status: v.status,
     createdAt: v.createdAt,
   };

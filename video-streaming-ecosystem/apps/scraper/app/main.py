@@ -73,6 +73,10 @@ async def scrape_single(payload: ScrapeRequest, db: AsyncSession = Depends(get_d
             preview_videos=data.get("preview_videos"),
             m3u8_links=data.get("m3u8_links"),
             direct_video_links=data.get("direct_video_links"),
+            likes=data.get("likes") or 0,
+            published_relative=data.get("published_relative"),
+            comments_count=data.get("comments_count") or 0,
+            comments_json=data.get("comments"),
             status=VideoStatus.active
         )
         db.add(video)

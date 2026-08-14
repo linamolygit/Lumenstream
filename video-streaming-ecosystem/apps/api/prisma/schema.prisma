@@ -65,6 +65,12 @@ model Video {
   m3u8Links        Json?       @map("m3u8_links")
   directVideoLinks Json?       @map("direct_video_links")
 
+  likes            Int         @default(0)
+  publishedAt      DateTime?   @map("published_at")
+  publishedRelative String?    @map("published_relative") @db.VarChar(100)
+  commentsCount    Int         @default(0) @map("comments_count")
+  commentsJson     Json?       @map("comments_json")
+
   status           VideoStatus @default(active)
   isFeatured       Boolean     @default(false) @map("is_featured")
   lastCheckedAt    DateTime?   @map("last_checked_at")
