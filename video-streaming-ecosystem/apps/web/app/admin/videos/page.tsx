@@ -253,6 +253,13 @@ export default function AllVideosPage() {
                     >
                       <EyeIcon className="h-4 w-4" />
                     </Link>
+                    <Link
+                      href={`/admin/all_video/edit/${v.uuid}`}
+                      className="rounded-lg p-1.5 text-violet-400 transition hover:bg-violet-600 hover:text-white"
+                      title="Edit Video Asset"
+                    >
+                      <EditIcon className="h-4 w-4" />
+                    </Link>
                     <button
                       onClick={() => handleToggleStatus(v)}
                       className="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white hover:text-black"

@@ -118,6 +118,83 @@ router.get('/stream-links', async (req, res) => {
   }
 });
 
+// PATCH /api/admin/videos/:uuid (Full Metadata & Assets Update)
+router.patch('/videos/:uuid', async (req, res) => {
+  try {
+    const {
+      title,
+      slug,
+      description,
+      sourcePageUrl,
+      duration,
+      sourceViews,
+      channelName,
+      channelUrl,
+      channelLogo,
+      thumbnail,
+      sprite,
+      previewVideos,
+      m3u8Links,
+      directVideoLinks,
+      status,
+    } = req.body;
+
+    const dataToUpdate = {};
+    if (title !== undefined) dataToUpdate.title = title;
+    if (slug !== undefined) dataToUpdate.slug = slug;
+    if (description !== undefined) dataToUpdate.description = description;
+    if (sourcePageUrl !== undefined) dataToUpdate.sourcePageUrl = sourcePageUrl;
+    if (duration !== undefined) dataToUpdate.duration = Number(duration) || 0;
+    if (sourceViews !== undefined) dataToUpdate.sourceViews = String(sourceViews);
+    if (channelName !== undefined) dataToUpdate.channelName = channelName;
+    if (channelUrl !== undefined) dataToUpdate.channelUrl = channelUrl;
+    if (channelLogo !== undefined) dataToUpdate.channelLogo = channelLogo;
+    if (thumbnail !== undefined) dataToUpdate.thumbnail = thumbnail;
+    if (sprite !== undefined) dataToUpdate.sprite = sprite;
+    if (previewVideos !== undefined) dataToUpdate.previewVideos = previewVideos;
+    if (m3u8Links !== undefined) dataToUpdate.m3u8Links = m3u8Links;
+    if (directVideoLinks !== undefined) dataToUpdate.directVideoLinks = directVideoLinks;
+    if (status !== undefined) dataToUpdate.status = status;
+
+    const video = await prisma.video.update({
+      where: { uuid: req.params.uuid },
+      data: dataToUpdate,
+    });
+    res.json({ message: 'Video updated successfully', video: mapAdminVideo(video) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/videos/:uuid/test-stream
+router.post('/videos/:uuid/test-stream', async (req, res) => {
+  try {
+    const { streamUrl } = req.body;
+    if (!streamUrl) return res.status(400).json({ error: 'streamUrl required' });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(streamUrl, {
+        method: 'HEAD',
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (response.ok || response.status === 200 || response.status === 206) {
+        return res.json({ reachable: true, status: response.status, message: 'Stream reachable' });
+      } else {
+        return res.json({ reachable: false, status: response.status, message: `HTTP ${response.status}` });
+      }
+    } catch (err) {
+      clearTimeout(timer);
+      return res.json({ reachable: false, status: 500, message: err.message || 'Stream unreachable' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/admin/videos/:uuid/status
 router.patch('/videos/:uuid/status', async (req, res) => {
   try {
