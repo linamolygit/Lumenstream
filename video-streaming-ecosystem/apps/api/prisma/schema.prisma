@@ -75,6 +75,8 @@ model Video {
   @@index([createdAt])
   @@index([views])
   @@index([channelName])
+  @@index([status, createdAt])
+  @@index([status, views])
   @@map("videos")
 }
 
