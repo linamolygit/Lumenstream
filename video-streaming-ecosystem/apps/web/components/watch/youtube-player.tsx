@@ -58,14 +58,19 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
         if (v.canPlayType("application/vnd.apple.mpegurl")) {
           v.src = src;
         } else {
-          const Hls = (await import("hls.js")).default;
-          if (Hls.isSupported()) {
-            const hls = new Hls({ enableWorker: true });
-            hlsRef.current = hls;
-            hls.loadSource(src);
-            hls.attachMedia(v);
-            hls.on(Hls.Events.ERROR, () => onError?.());
-          } else {
+          try {
+            const HlsModule = await import("hls.js").catch(() => null);
+            const Hls = HlsModule?.default || HlsModule;
+            if (Hls && Hls.isSupported()) {
+              const hls = new Hls({ enableWorker: true });
+              hlsRef.current = hls;
+              hls.loadSource(src);
+              hls.attachMedia(v);
+              hls.on(Hls.Events.ERROR, () => onError?.());
+            } else {
+              v.src = src;
+            }
+          } catch {
             v.src = src;
           }
         }
