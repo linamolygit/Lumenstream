@@ -22,7 +22,7 @@ function fmt(t: number) {
 export function YoutubePlayer({ src, poster, title, onError }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hlsRef = useRef<any>(null);
 
   const [playing, setPlaying] = useState(false);
