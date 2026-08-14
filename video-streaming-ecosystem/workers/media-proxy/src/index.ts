@@ -155,7 +155,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/vnd.apple.mpegurl",
-          "Cache-Control": "no-store",
+          "Cache-Control": "public, max-age=30, s-maxage=300, stale-while-revalidate=86400",
           ...corsHeaders(),
         },
       });
@@ -189,7 +189,7 @@ export default {
 
       const headers = new Headers(corsHeaders());
       headers.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");
-      headers.set("Cache-Control", "public, max-age=3600");
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
 
       return new Response(upstream.body, { status: upstream.status, headers });
     }
