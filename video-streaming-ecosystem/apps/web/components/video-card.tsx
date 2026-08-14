@@ -6,15 +6,7 @@ import Image from "next/image";
 import { MoreVertical, BadgeCheck, Bookmark, Share2, Copy, Check, Loader2 } from "lucide-react";
 import { formatDuration, cn } from "@/lib/utils";
 import { ShareModal } from "@/components/share-modal";
-
-function formatViews(views?: number | string | null) {
-  if (views == null) return "0 views";
-  if (typeof views === "string")
-    return views.toLowerCase().includes("view") ? views : `${views} views`;
-  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
-  if (views >= 1_000) return `${(views / 1_000).toFixed(1)}K views`;
-  return `${views} views`;
-}
+import { formatViews } from "@/lib/format-views";
 
 function timeAgo(date?: string) {
   if (!date) return "";
@@ -247,7 +239,7 @@ export function VideoCard({ video }: { video: any }) {
             </div>
 
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              {formatViews(video.sourceViews || video.views)}
+              {formatViews(video.sourceViews || video.views, "views")}
               {video.createdAt ? ` • ${timeAgo(video.createdAt)}` : ""}
             </p>
           </div>

@@ -38,11 +38,7 @@ type Stats = {
   recentVideos?: Video[];
 };
 
-function formatViews(n = 0) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
+import { formatViews } from "@/lib/format-views";
 
 function timeAgo(date?: string) {
   if (!date) return "";

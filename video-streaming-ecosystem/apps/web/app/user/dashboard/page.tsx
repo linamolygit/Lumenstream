@@ -29,13 +29,7 @@ interface VideoCard {
   watchedAt?: string;
 }
 
-function formatViews(views?: number, sourceViews?: string): string {
-  const v = views || 0;
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  if (sourceViews) return sourceViews;
-  return v.toString();
-}
+import { formatViews } from "@/lib/format-views";
 
 function formatDuration(sec?: number): string {
   if (!sec) return "";
@@ -152,7 +146,7 @@ function VideoGrid({ videos }: { videos: VideoCard[] }) {
               )}
               <p className="truncate text-[10px] text-neutral-500">{v.channelName || "Unknown"}</p>
               <span className="ml-auto text-[10px] text-neutral-600 flex-shrink-0">
-                {formatViews(v.views, v.sourceViews)} views
+                {formatViews(v.sourceViews || v.views, "views")}
               </span>
             </div>
           </div>

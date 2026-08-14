@@ -24,12 +24,7 @@ function formatDuration(sec?: number) {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function formatViews(views?: number, sourceViews?: string) {
-  const v = views || 0;
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return sourceViews || v.toString();
-}
+import { formatViews } from "@/lib/format-views";
 
 export default function RecommendedPage() {
   const { get } = useUserApi();
@@ -141,7 +136,7 @@ export default function RecommendedPage() {
                   {v.channelLogo && <img src={v.channelLogo} alt="" className="h-3.5 w-3.5 rounded-full" />}
                   <p className="truncate text-[10px] text-neutral-500">{v.channelName || "Unknown"}</p>
                   <span className="ml-auto flex-shrink-0 text-[10px] text-neutral-600">
-                    {formatViews(v.views, v.sourceViews)} views
+                    {formatViews(v.sourceViews || v.views, "views")}
                   </span>
                 </div>
               </div>

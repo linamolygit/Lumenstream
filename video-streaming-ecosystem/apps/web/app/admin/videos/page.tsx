@@ -31,13 +31,7 @@ type Video = {
   createdAt?: string;
 };
 
-function formatViews(views?: number | string | null) {
-  if (views == null) return "0";
-  if (typeof views === "string") return views.replace(/\s*views?/i, "");
-  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M`;
-  if (views >= 1_000) return `${(views / 1_000).toFixed(1)}K`;
-  return String(views);
-}
+import { formatViews } from "@/lib/format-views";
 
 function StatusPill({ status }: { status: string }) {
   const s = (status || "").toLowerCase();

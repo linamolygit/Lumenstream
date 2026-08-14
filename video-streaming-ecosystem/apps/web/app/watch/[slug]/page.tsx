@@ -80,14 +80,7 @@ function YtMoreIcon({ className }: { className?: string }) {
   );
 }
 
-function formatViews(views?: number | string | null) {
-  if (views == null) return "0 views";
-  if (typeof views === "string")
-    return views.toLowerCase().includes("view") ? views : `${views} views`;
-  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
-  if (views >= 1_000) return `${(views / 1_000).toFixed(0)}K views`;
-  return `${views} views`;
-}
+import { formatViews } from "@/lib/format-views";
 
 function timeAgo(date?: string) {
   if (!date) return "";
@@ -328,7 +321,7 @@ export default function WatchPage() {
               className="mt-3 w-full rounded-xl bg-neutral-100 p-3.5 text-left text-sm transition hover:bg-neutral-200/80 dark:bg-[#272727] dark:hover:bg-[#3f3f3f]"
             >
               <p className="font-semibold text-neutral-900 dark:text-white">
-                {formatViews(video.sourceViews || video.views)}
+                {formatViews(video.sourceViews || video.views, "views")}
                 {video.createdAt ? ` · ${timeAgo(video.createdAt)}` : ""}
               </p>
               <p
@@ -396,7 +389,7 @@ export default function WatchPage() {
                     </p>
                     <p className="mt-1 truncate text-xs text-neutral-500 dark:text-[#aaa]">{v.channelName || "Unknown"}</p>
                     <p className="text-xs text-neutral-500 dark:text-[#aaa]">
-                      {formatViews(v.sourceViews || v.views)}
+                      {formatViews(v.sourceViews || v.views, "views")}
                       {v.createdAt ? ` · ${timeAgo(v.createdAt)}` : ""}
                     </p>
                   </div>
