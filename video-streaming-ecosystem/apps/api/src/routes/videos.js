@@ -1,5 +1,6 @@
 import express from 'express';
 import prisma from '../utils/prisma.js';
+import { getCache, setCache } from '../utils/cache.js';
 
 const router = express.Router();
 
@@ -37,6 +38,10 @@ router.get('/', async (req, res) => {
     const q = (req.query.q || '').trim();
     const skip = (page - 1) * limit;
 
+    const cacheKey = `videos_list_${page}_${limit}_${sort}_${q}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     let orderBy = { createdAt: 'desc' };
     if (sort === 'trending') orderBy = { views: 'desc' };
     if (sort === 'featured') orderBy = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
@@ -63,10 +68,13 @@ router.get('/', async (req, res) => {
       prisma.video.count({ where }),
     ]);
 
-    res.json({
+    const result = {
       data: data.map(mapVideo),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    });
+    };
+
+    await setCache(cacheKey, result, 60);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -85,6 +93,10 @@ router.get('/search', async (req, res) => {
       return res.json({ data: [], pagination: { page, limit, total: 0, pages: 0 } });
     }
 
+    const cacheKey = `videos_search_${page}_${limit}_${q}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const where = {
       status: 'active',
       OR: [{ title: { contains: q } }, { channelName: { contains: q } }],
@@ -100,10 +112,13 @@ router.get('/search', async (req, res) => {
       prisma.video.count({ where }),
     ]);
 
-    res.json({
+    const result = {
       data: data.map(mapVideo),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    });
+    };
+
+    await setCache(cacheKey, result, 60);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -113,6 +128,17 @@ router.get('/search', async (req, res) => {
 router.get('/slug/:slug', async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=1800, stale-while-revalidate=86400');
   try {
+    const slugKey = `video_slug_${req.params.slug}`;
+    const cached = await getCache(slugKey);
+    if (cached) {
+      // Async view increment
+      prisma.video.update({
+        where: { uuid: cached.uuid },
+        data: { views: { increment: 1 } },
+      }).catch(() => null);
+      return res.json(cached);
+    }
+
     const video = await prisma.video.findFirst({
       where: { slug: req.params.slug },
     });
@@ -124,7 +150,9 @@ router.get('/slug/:slug', async (req, res) => {
       data: { views: { increment: 1 } },
     }).catch(() => null);
 
-    res.json(mapVideo(video));
+    const result = mapVideo(video);
+    await setCache(slugKey, result, 120);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -134,9 +162,16 @@ router.get('/slug/:slug', async (req, res) => {
 router.get('/uuid/:uuid', async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
+    const uuidKey = `video_uuid_${req.params.uuid}`;
+    const cached = await getCache(uuidKey);
+    if (cached) return res.json(cached);
+
     const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
     if (!video) return res.status(404).json({ error: 'Video not found' });
-    res.json(mapVideo(video));
+
+    const result = mapVideo(video);
+    await setCache(uuidKey, result, 120);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
