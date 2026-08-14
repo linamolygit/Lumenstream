@@ -176,12 +176,52 @@ class AdvancedMultiSiteExtractor:
                 if video_model.get(key):
                     data["thumbnails"].append(video_model[key])
 
-            author = video_model.get("author") or video_model.get("channelModel") or {}
+            # --- Author / channel from videoModel ---
+            author = (
+                video_model.get("author")
+                or video_model.get("channelModel")
+                or video_model.get("channel")
+                or video_model.get("uploader")
+                or {}
+            )
             if isinstance(author, dict):
-                data["channel_name"] = author.get("name") or author.get("username")
-                data["channel_url"] = author.get("pageURL") or author.get("link")
-                if author.get("logo") or author.get("avatar"):
-                    data["channel_logo"] = author.get("logo") or author.get("avatar")
+                data["channel_name"] = (
+                    author.get("name")
+                    or author.get("username")
+                    or author.get("title")
+                    or data["channel_name"]
+                )
+                data["channel_url"] = (
+                    author.get("pageURL")
+                    or author.get("link")
+                    or author.get("url")
+                    or author.get("profileURL")
+                    or data["channel_url"]
+                )
+                # Avatar / logo — multiple possible keys
+                for key in (
+                    "logo",
+                    "avatar",
+                    "avatarURL",
+                    "thumbURL",
+                    "thumb",
+                    "photoURL",
+                    "image",
+                    "icon",
+                    "profileImage",
+                    "avatarUrl",
+                    "logoURL",
+                ):
+                    val = author.get(key)
+                    if isinstance(val, str) and val.startswith("http"):
+                        data["channel_logo"] = val
+                        break
+                    # nested { url: "..." }
+                    if isinstance(val, dict):
+                        u = val.get("url") or val.get("src")
+                        if isinstance(u, str) and u.startswith("http"):
+                            data["channel_logo"] = u
+                            break
 
         # 2. Fallback HTML parsing
         if not data["title"]:
@@ -231,13 +271,84 @@ class AdvancedMultiSiteExtractor:
 
         data["preview_videos"] = self._clean_list(data["preview_videos"])
 
-        # Channel fallback
-        if not data["channel_name"]:
-            ch = soup.select_one(".video-uploader__name, .uploader a, .author a, .channel-name, a[href*='/channels/']")
-            if ch:
-                data["channel_name"] = ch.get_text(strip=True)
-                if ch.get("href"):
-                    data["channel_url"] = urljoin(page_url, ch.get("href"))
+        # ---------- Channel name + avatar (HTML fallback) ----------
+        channel_link = soup.select_one(
+            "a[href*='/creators/'], "
+            "a[href*='/channels/'], "
+            "a[href*='/channel/'], "
+            "a[href*='/pornstars/'], "
+            "a[href*='/users/'], "
+            "a.video-uploader__name, "
+            "a[data-role='video-uploader-link'], "
+            ".video-uploader a, "
+            ".uploader a, "
+            ".author a"
+        )
+
+        if channel_link:
+            if not data["channel_name"]:
+                label = channel_link.select_one(
+                    ".label-5984a, .body-bold-8643e, .video-uploader__name, span"
+                )
+                data["channel_name"] = (
+                    (label.get_text(strip=True) if label else None)
+                    or channel_link.get("title")
+                    or channel_link.get_text(strip=True)
+                    or None
+                )
+            if not data["channel_url"] and channel_link.get("href"):
+                data["channel_url"] = urljoin(page_url, channel_link.get("href"))
+
+            if not data["channel_logo"]:
+                # img inside same creator/channel link
+                av = channel_link.select_one(
+                    "img.image-9a750, "
+                    "img[src*='avatar'], "
+                    "img[src*='logo'], "
+                    ".avatar-e781b img, "
+                    ".avatarShape-5984a img, "
+                    "img"
+                )
+                if av:
+                    src = (
+                        av.get("src")
+                        or av.get("data-src")
+                        or av.get("data-original")
+                        or ""
+                    )
+                    if src and not src.startswith("data:"):
+                        data["channel_logo"] = urljoin(page_url, src)
+
+        # Global avatar search if still missing (creator tag near player)
+        if not data["channel_logo"]:
+            av2 = soup.select_one(
+                "a[href*='/creators/'] img, "
+                "a[href*='/channels/'] img, "
+                ".avatar-e781b img, "
+                ".avatarShape-5984a img, "
+                "img[src*='avatar_'], "
+                "img[src*='/avatar']"
+            )
+            if av2:
+                src = av2.get("src") or av2.get("data-src") or ""
+                if src and not src.startswith("data:"):
+                    data["channel_logo"] = urljoin(page_url, src)
+
+        # Regex fallback on full HTML (xhpingcdn avatar URLs)
+        if not data["channel_logo"]:
+            m = re.search(
+                r'https?://[^"\'\s]+/(?:avatar[_\-]?\d+|logo)[^"\'\s]*\.(?:png|jpg|jpeg|webp)',
+                html,
+                re.I,
+            )
+            if m:
+                data["channel_logo"] = m.group(0)
+
+        # Clean empty strings
+        if data.get("channel_name") == "":
+            data["channel_name"] = None
+        if data.get("channel_logo") == "":
+            data["channel_logo"] = None
 
         # 3. Stream Extraction via yt-dlp
         yinfo = self.get_yt_dlp_info(page_url)
