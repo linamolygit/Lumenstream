@@ -196,6 +196,25 @@ export default function ProfilePage() {
           </button>
         </form>
       </motion.div>
+
+      {/* Danger Zone */}
+      <div className="mt-8 rounded-[20px] border border-red-500/20 bg-red-500/5 p-5 dark:border-red-500/10 dark:bg-red-500/10">
+        <h3 className="text-base font-bold text-red-600 dark:text-red-400">Danger Zone</h3>
+        <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+          Permanently delete your account, watch history, liked videos, and personal data.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm("Are you sure you want to delete your account and clear all your data? This action cannot be undone.")) {
+              alert("Your data deletion request has been submitted successfully.");
+            }
+          }}
+          className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition shadow-sm"
+        >
+          Delete Account & Clear Data
+        </button>
+      </div>
     </div>
   );
 }

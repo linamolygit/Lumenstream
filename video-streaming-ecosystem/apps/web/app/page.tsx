@@ -5,9 +5,9 @@ import { VideoCard } from "@/components/video-card";
 import { VideoCardSkeleton } from "@/components/video-card-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
-import { Sparkles, TrendingUp, Crown } from "lucide-react";
+import { Sparkles, TrendingUp, Crown, Shuffle } from "lucide-react";
 
-type Filter = "latest" | "trending" | "featured";
+type Filter = "latest" | "trending" | "featured" | "random";
 
 export default function HomePage() {
   const [videos, setVideos] = useState<any[]>([]);
@@ -19,9 +19,14 @@ export default function HomePage() {
       setLoading(true);
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-        const res = await fetch(`${apiUrl}/api/videos?limit=24&sort=${filter}`);
+        const fetchFilter = filter === "random" ? "latest" : filter;
+        const res = await fetch(`${apiUrl}/api/videos?limit=24&sort=${fetchFilter}`);
         const json = await res.json();
-        setVideos(json.data || []);
+        let items = json.data || [];
+        if (filter === "random") {
+          items = [...items].sort(() => Math.random() - 0.5);
+        }
+        setVideos(items);
       } catch (err) {
         console.error(err);
         setVideos([]);
@@ -36,6 +41,7 @@ export default function HomePage() {
     { key: "latest", label: "Latest", icon: Sparkles },
     { key: "trending", label: "Trending", icon: TrendingUp },
     { key: "featured", label: "Featured", icon: Crown },
+    { key: "random", label: "Random Feed", icon: Shuffle },
   ];
 
   return (

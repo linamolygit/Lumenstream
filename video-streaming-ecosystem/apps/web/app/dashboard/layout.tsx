@@ -16,6 +16,9 @@ import {
   Shield,
   Sun,
   Moon,
+  Heart,
+  Bookmark,
+  History,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/context/auth-context";
@@ -23,9 +26,11 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/add-video", label: "Add Video", icon: PlusCircle },
-  { href: "/dashboard/my-videos", label: "My Videos", icon: Film },
-  { href: "/dashboard/profile", label: "Profile", icon: User },
+  { href: "/dashboard?tab=liked", label: "Liked Videos", icon: Heart },
+  { href: "/dashboard?tab=saved", label: "Saved Playlist", icon: Bookmark },
+  { href: "/dashboard?tab=history", label: "Watch History", icon: History },
+  { href: "/dashboard/my-videos", label: "My Library", icon: Film },
+  { href: "/dashboard/profile", label: "Profile Settings", icon: User },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
