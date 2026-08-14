@@ -3,7 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
-import { MessageSquare, Trash2, RefreshCw, ExternalLink } from "lucide-react";
+import {
+  ChatText as MessageSquare,
+  Trash as Trash2,
+  ArrowsClockwise as RefreshCw,
+  ArrowSquareOut as ExternalLink,
+} from "@phosphor-icons/react";
 
 interface Comment {
   id: string;

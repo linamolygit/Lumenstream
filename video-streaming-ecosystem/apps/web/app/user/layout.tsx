@@ -5,26 +5,26 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/auth-context";
 import {
-  Home,
-  LayoutDashboard,
-  History,
-  Bookmark,
+  House as Home,
+  SquaresFour as LayoutDashboard,
+  ClockCounterClockwise as History,
+  BookmarkSimple as Bookmark,
   Heart,
-  Download,
-  Sparkles,
-  TrendingUp,
-  MessageSquare,
+  DownloadSimple as Download,
+  Sparkle as Sparkles,
+  TrendUp as TrendingUp,
+  ChatText as MessageSquare,
   UserCircle,
-  Settings,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
+  Gear as Settings,
+  SignOut as LogOut,
+  CaretLeft as ChevronLeft,
+  CaretRight as ChevronRight,
   Play,
-  Menu,
+  List as Menu,
   X,
   Bell,
-  Search,
-} from "lucide-react";
+  MagnifyingGlass as Search,
+} from "@phosphor-icons/react";
 
 const NAV_SECTIONS = [
   {

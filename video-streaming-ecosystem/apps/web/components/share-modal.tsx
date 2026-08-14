@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Check, Copy, Share2 } from "lucide-react";
+import { X, Check, Copy, ShareNetwork as Share2 } from "@phosphor-icons/react";
 
 interface ShareModalProps {
   isOpen: boolean;

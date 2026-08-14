@@ -5,14 +5,14 @@ import { useAuth } from "@/context/auth-context";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
 import {
-  Clock,
-  Bookmark,
-  TrendingUp,
-  Sparkles,
+  ClockCounterClockwise as Clock,
+  BookmarkSimple as Bookmark,
+  TrendUp as TrendingUp,
+  Sparkle as Sparkles,
   Play,
-  ChevronRight,
-  RefreshCw,
-} from "lucide-react";
+  CaretRight as ChevronRight,
+  ArrowsClockwise as RefreshCw,
+} from "@phosphor-icons/react";
 
 interface VideoCard {
   uuid: string;

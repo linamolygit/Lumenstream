@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, Play, Info } from "lucide-react";
+import { DownloadSimple as Download, Play, Info } from "@phosphor-icons/react";
 
 const DOWNLOADS_KEY = "lumenstream_downloads";
 

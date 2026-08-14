@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Monitor, Volume2, Shield, Bell, ChevronRight } from "lucide-react";
+import {
+  Gear as Settings,
+  Desktop as Monitor,
+  SpeakerHigh as Volume2,
+  ShieldCheck as Shield,
+  Bell,
+  CaretRight as ChevronRight,
+} from "@phosphor-icons/react";
 
 interface ToggleProps {
   value: boolean;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Heart } from "lucide-react";
+import { Heart } from "@phosphor-icons/react";
 
 export function Footer() {
   return (

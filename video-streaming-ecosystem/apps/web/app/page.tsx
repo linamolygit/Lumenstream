@@ -5,7 +5,7 @@ import { VideoCard } from "@/components/video-card";
 import { VideoCardSkeleton } from "@/components/video-card-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
-import { Sparkles, TrendingUp, Crown, Shuffle } from "lucide-react";
+import { Sparkle as Sparkles, TrendUp as TrendingUp, Crown, Shuffle } from "@phosphor-icons/react";
 
 type Filter = "latest" | "trending" | "featured" | "random";
 

@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/auth-context";
 import { useUserApi } from "@/lib/use-user-api";
-import { UserCircle, Edit2, Save, X, Trash2, RefreshCw } from "lucide-react";
+import {
+  UserCircle,
+  PencilSimple as Edit2,
+  FloppyDisk as Save,
+  X,
+  Trash as Trash2,
+  ArrowsClockwise as RefreshCw,
+} from "@phosphor-icons/react";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();

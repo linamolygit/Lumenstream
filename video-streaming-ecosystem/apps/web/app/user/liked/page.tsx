@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
-import { Heart, Play, X, RefreshCw } from "lucide-react";
+import { Heart, Play, X, ArrowsClockwise as RefreshCw } from "@phosphor-icons/react";
 
 interface LikedVideo {
   uuid: string;

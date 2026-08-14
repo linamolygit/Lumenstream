@@ -3,7 +3,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
-import { History, Play, Trash2, Trash, RefreshCw, X, RotateCcw } from "lucide-react";
+import {
+  ClockCounterClockwise as History,
+  Play,
+  Trash,
+  ArrowsClockwise as RefreshCw,
+  X,
+  ArrowCounterClockwise as RotateCcw,
+} from "@phosphor-icons/react";
 
 interface HistoryItem {
   uuid: string;

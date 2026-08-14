@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
-import { Sparkles, Play, RefreshCw } from "lucide-react";
+import { Sparkle as Sparkles, Play, ArrowsClockwise as RefreshCw } from "@phosphor-icons/react";
 
 interface RecoVideo {
   uuid: string;

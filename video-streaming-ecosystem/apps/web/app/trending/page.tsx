@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { VideoCard } from "@/components/video-card";
 import { VideoCardSkeleton } from "@/components/video-card-skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { TrendingUp } from "lucide-react";
+import { TrendUp as TrendingUp } from "@phosphor-icons/react";
 
 export default function TrendingPage() {
   const [videos, setVideos] = useState<any[]>([]);

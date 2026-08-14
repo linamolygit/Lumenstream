@@ -5,7 +5,17 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Search, Moon, Sun, Bell, User, LogOut, Shield, Heart, Bookmark } from "lucide-react";
+import {
+  MagnifyingGlass as Search,
+  Moon,
+  Sun,
+  Bell,
+  User,
+  SignOut as LogOut,
+  ShieldCheck as Shield,
+  Heart,
+  BookmarkSimple as Bookmark,
+} from "@phosphor-icons/react";
 import { useAuth } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
 

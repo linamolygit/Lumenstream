@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUserApi } from "@/lib/use-user-api";
 import Link from "next/link";
-import { Bookmark, Play, X, RefreshCw, Search } from "lucide-react";
+import {
+  BookmarkSimple as Bookmark,
+  Play,
+  X,
+  ArrowsClockwise as RefreshCw,
+  MagnifyingGlass as Search,
+} from "@phosphor-icons/react";
 
 interface SavedVideo {
   uuid: string;

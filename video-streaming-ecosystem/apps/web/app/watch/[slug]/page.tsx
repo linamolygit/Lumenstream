@@ -5,22 +5,22 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
-  BadgeCheck,
-  ListFilter,
+  CheckCircle as BadgeCheck,
+  Funnel as ListFilter,
   ArrowLeft,
-  AlertCircle,
-  RefreshCw,
+  WarningCircle as AlertCircle,
+  ArrowsClockwise as RefreshCw,
   Check,
-  Download,
-  Bookmark,
-  Share2,
+  DownloadSimple as Download,
+  BookmarkSimple as Bookmark,
+  ShareNetwork as Share2,
   ThumbsUp,
   ThumbsDown,
-  Loader2,
-  Send,
+  Spinner as Loader2,
+  PaperPlaneRight as Send,
   User,
-  Sparkles,
-} from "lucide-react";
+  Sparkle as Sparkles,
+} from "@phosphor-icons/react";
 import { YoutubePlayer } from "@/components/watch/youtube-player";
 import { formatDuration, cn } from "@/lib/utils";
 import { formatViews } from "@/lib/format-views";

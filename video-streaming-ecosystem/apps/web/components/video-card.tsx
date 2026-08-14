@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { MoreVertical, BadgeCheck, Bookmark, Share2, Copy, Check, Loader2 } from "lucide-react";
+import {
+  DotsThreeVertical as MoreVertical,
+  CheckCircle as BadgeCheck,
+  BookmarkSimple as Bookmark,
+  ShareNetwork as Share2,
+  Copy,
+  Check,
+  Spinner as Loader2,
+} from "@phosphor-icons/react";
 import { formatDuration, cn } from "@/lib/utils";
 import { ShareModal } from "@/components/share-modal";
 import { formatViews } from "@/lib/format-views";
