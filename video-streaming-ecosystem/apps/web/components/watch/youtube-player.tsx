@@ -59,7 +59,8 @@ export function YoutubePlayer({ src, poster, title, onError }: Props) {
           v.src = src;
         } else {
           try {
-            const HlsModule = await import("hls.js").catch(() => null);
+            const hlsName = "hls.js";
+            const HlsModule = await import(/* webpackIgnore: true */ hlsName).catch(() => null);
             const Hls = HlsModule?.default || HlsModule;
             if (Hls && Hls.isSupported()) {
               const hls = new Hls({ enableWorker: true });
