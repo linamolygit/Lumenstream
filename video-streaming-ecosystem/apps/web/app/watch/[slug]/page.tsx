@@ -7,20 +7,18 @@ import Image from "next/image";
 import {
   CheckCircle as BadgeCheck,
   Funnel as ListFilter,
-  ArrowLeft,
   WarningCircle as AlertCircle,
   ArrowsClockwise as RefreshCw,
-  Check,
   DownloadSimple as Download,
   BookmarkSimple as Bookmark,
   ShareNetwork as Share2,
   ThumbsUp,
   ThumbsDown,
-  Spinner as Loader2,
   PaperPlaneRight as Send,
   User,
   Sparkle as Sparkles,
 } from "@phosphor-icons/react";
+import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { YoutubePlayer } from "@/components/watch/youtube-player";
 import { formatDuration, cn } from "@/lib/utils";
 import { formatViews } from "@/lib/format-views";

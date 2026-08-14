@@ -9,22 +9,18 @@ import {
   SquaresFour as LayoutDashboard,
   ClockCounterClockwise as History,
   BookmarkSimple as Bookmark,
-  Heart,
   DownloadSimple as Download,
   Sparkle as Sparkles,
-  TrendUp as TrendingUp,
+  Fire as TrendingUp,
   ChatText as MessageSquare,
   UserCircle,
   Gear as Settings,
-  SignOut as LogOut,
-  CaretLeft as ChevronLeft,
-  CaretRight as ChevronRight,
+  MagnifyingGlass as Search,
+  Bell,
   Play,
   List as Menu,
-  X,
-  Bell,
-  MagnifyingGlass as Search,
 } from "@phosphor-icons/react";
+import { Heart, LogOut, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 const NAV_SECTIONS = [
   {
