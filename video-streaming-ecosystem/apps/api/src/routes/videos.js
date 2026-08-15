@@ -91,8 +91,8 @@ function mapVideo(v, includeRawStreams = false) {
   return obj;
 }
 
-// GET /api/play/:uuid or /api/play/slug/:identifier
-router.get('/play/:identifier', async (req, res) => {
+// GET /api/play/:uuid or /api/videos/play/:identifier or /api/videos/:identifier/play
+const handlePlay = async (req, res) => {
   try {
     const { identifier } = req.params;
     const forceRefresh = req.query.forceRefresh === 'true';
@@ -130,7 +130,10 @@ router.get('/play/:identifier', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+router.get('/play/:identifier', handlePlay);
+router.get('/:identifier/play', handlePlay);
 
 // GET /api/videos?limit=24&sort=latest|trending|featured&q=...
 router.get('/', async (req, res) => {

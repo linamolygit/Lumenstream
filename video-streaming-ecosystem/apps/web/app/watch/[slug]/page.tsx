@@ -194,11 +194,11 @@ export default function WatchPage() {
         setLikesCount(data.likesCount || 0);
         setViewsCount(data.views || 0);
 
-        // Fetch short-lived signed worker play URL from Play API
-        fetch(`${apiBase}/api/videos/play/${data.uuid}`)
-          .then((r) => r.json())
+        // Fetch short-lived signed worker play URL from Play API (with automatic fallback to workerBase)
+        fetch(`${apiBase}/api/play/${data.uuid}`)
+          .then((r) => (r.ok ? r.json() : fetch(`${apiBase}/api/videos/play/${data.uuid}`).then((r2) => (r2.ok ? r2.json() : null))))
           .then((pData) => {
-            if (pData.playUrl && isMounted) setSignedPlayUrl(pData.playUrl);
+            if (pData?.playUrl && isMounted) setSignedPlayUrl(pData.playUrl);
           })
           .catch(() => {});
 
@@ -229,7 +229,7 @@ export default function WatchPage() {
           .catch(() => {});
 
         // Check user like and save status if authenticated
-        const authToken = token || localStorage.getItem("lumenstream_token") || localStorage.getItem("token");
+        const authToken = token || (typeof window !== "undefined" ? localStorage.getItem("lumenstream_token") || localStorage.getItem("token") : null);
         if (authToken) {
           fetch(`${apiBase}/api/user/like-status/${data.uuid}`, {
             headers: { Authorization: `Bearer ${authToken}` },
@@ -255,6 +255,11 @@ export default function WatchPage() {
       isMounted = false;
     };
   }, [slug, apiBase, token]);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [signedPlayUrl, setSignedPlayUrl] = useState<string>("");
 

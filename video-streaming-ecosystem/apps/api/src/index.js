@@ -35,6 +35,10 @@ app.use('/api/user/scrape', scrapeLimiter);
 app.use('/api/videos/uuid', streamLimiter);
 
 app.use('/api/videos', videosRouter);
+app.use('/api/play', (req, res, next) => {
+  req.url = '/play' + req.url;
+  videosRouter(req, res, next);
+});
 app.use('/api/auth', authRouter);
 app.use('/api/user', userRouter);
 app.use('/api/admin', protect, adminOnly, adminRouter);
