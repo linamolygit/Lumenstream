@@ -8,8 +8,8 @@ const router = express.Router();
 const refreshPromises = new Map();
 
 function signWorkerUrl(uuid, expSeconds = 900) {
-  const workerBase = (process.env.WORKER_URL || 'https://lumenstream-media-proxy.workers.dev').replace(/\/$/, '');
-  const secret = process.env.STREAM_SIGN_SECRET || 'super-long-random-secret-key-change-this';
+  const workerBase = (process.env.WORKER_URL || 'https://mediahoster-proxy.hirensrivastawa.workers.dev').replace(/\/$/, '');
+  const secret = process.env.STREAM_SIGN_SECRET || '7137765914fd7776ced46cf1147fb16a533c0073774e7f6f8ef4d76f8bdb8ce3';
   const exp = Math.floor(Date.now() / 1000) + expSeconds;
   const message = `${uuid}:${exp}`;
   const sigFull = crypto.createHmac('sha256', secret).update(message).digest('hex');

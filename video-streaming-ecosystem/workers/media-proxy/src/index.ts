@@ -1,8 +1,8 @@
 export interface Env {
   API_BASE_URL: string;
   STREAM_SIGN_SECRET: string;
-  // set true if you want to REQUIRE signed links only
   REQUIRE_SIGNED?: string;
+  REQUIRE_SIGNATURE?: string;
 }
 
 function corsHeaders() {
@@ -13,11 +13,36 @@ function corsHeaders() {
   };
 }
 
-const ORIGIN_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Referer": "https://xhamster.com/",
-  "Origin": "https://xhamster.com",
-};
+function originHeadersFor(link: string): Record<string, string> {
+  const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  try {
+    const u = new URL(link);
+    const host = u.hostname.toLowerCase();
+
+    // xHamster HLS streams require xhamster origin & referer
+    if (host.includes("xhamster") || host.includes("xh") || (host.includes("sex303") === false && link.includes(".m3u8"))) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://xhamster.com/",
+        "Origin": "https://xhamster.com",
+        "Accept": "*/*",
+      };
+    }
+
+    // Direct MP4 / files4host / sex303 / custom CDNs: use own origin/referer
+    return {
+      "User-Agent": ua,
+      "Referer": `${u.origin}/`,
+      "Origin": u.origin,
+      "Accept": "*/*",
+    };
+  } catch {
+    return {
+      "User-Agent": ua,
+      "Accept": "*/*",
+    };
+  }
+}
 
 async function hmacHex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -126,7 +151,8 @@ export default {
 
       const exp = url.searchParams.get("exp");
       const sig = url.searchParams.get("sig");
-      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
+      const requireSignedVal = (env.REQUIRE_SIGNED || env.REQUIRE_SIGNATURE || "").toLowerCase();
+      const requireSigned = requireSignedVal === "true";
 
       const check = await verifySigned(uuid, exp, sig, env.STREAM_SIGN_SECRET, requireSigned);
       if (!check.ok) {
@@ -136,14 +162,14 @@ export default {
         });
       }
 
-      // Fetch video metadata from API (support both /api/videos/uuid/:uuid and /api/videos/:uuid)
+      // Fetch video metadata from API (support /api/videos/uuid/:uuid and /api/videos/:uuid)
       let metaRes = await fetch(`${apiBase}/api/videos/uuid/${uuid}`);
       if (!metaRes.ok) {
         metaRes = await fetch(`${apiBase}/api/videos/${uuid}`);
       }
 
       if (!metaRes.ok) {
-        return new Response(JSON.stringify({ error: "Video not found" }), {
+        return new Response(JSON.stringify({ error: "Video not found", uuid, apiBase }), {
           status: 404,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
@@ -191,18 +217,17 @@ export default {
       let candidateLinks = collectCandidateLinks(video);
 
       const reqRange = request.headers.get("Range");
-      const fetchHeaders: Record<string, string> = {
-        ...ORIGIN_HEADERS,
-        Accept: "*/*",
-      };
-      if (reqRange) fetchHeaders["Range"] = reqRange;
 
-      // Try fetching candidate stream links
+      // Try fetching candidate stream links using dynamic per-link origin headers
       let upstreamRes: Response | null = null;
       let workingLink = "";
       for (const link of candidateLinks) {
         try {
-          const res = await fetch(link, { headers: fetchHeaders });
+          const headers = {
+            ...originHeadersFor(link),
+            ...(reqRange ? { Range: reqRange } : {}),
+          };
+          const res = await fetch(link, { headers });
           if (res.ok || res.status === 206) {
             upstreamRes = res;
             workingLink = link;
@@ -222,7 +247,11 @@ export default {
             const newLinks = collectCandidateLinks(refreshedVideo);
             for (const link of newLinks) {
               try {
-                const res = await fetch(link, { headers: fetchHeaders });
+                const headers = {
+                  ...originHeadersFor(link),
+                  ...(reqRange ? { Range: reqRange } : {}),
+                };
+                const res = await fetch(link, { headers });
                 if (res.ok || res.status === 206) {
                   upstreamRes = res;
                   workingLink = link;
@@ -235,10 +264,23 @@ export default {
       }
 
       if (!upstreamRes) {
-        return new Response(JSON.stringify({ error: "No stream" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json", ...corsHeaders() },
-        });
+        return new Response(
+          JSON.stringify({
+            error: "No stream",
+            debug: {
+              uuid,
+              linkCount: candidateLinks.length,
+              candidateLinksPreview: candidateLinks.map((l) => l.slice(0, 80)),
+              videoStatus: video?.status || "unknown",
+              hasM3u8: !!(video?.m3u8Links || video?.m3u8_links),
+              hasMp4: !!(video?.directVideoLinks || video?.direct_video_links),
+            },
+          }),
+          {
+            status: 404,
+            headers: { "Content-Type": "application/json", ...corsHeaders() },
+          }
+        );
       }
 
       const contentType = upstreamRes.headers.get("Content-Type") || "";
@@ -281,7 +323,8 @@ export default {
       const target = url.searchParams.get("u");
       const exp = url.searchParams.get("exp");
       const sig = url.searchParams.get("sig");
-      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
+      const requireSignedVal = (env.REQUIRE_SIGNED || env.REQUIRE_SIGNATURE || "").toLowerCase();
+      const requireSigned = requireSignedVal === "true";
 
       if (!target) {
         return new Response("missing u", { status: 400, headers: corsHeaders() });
@@ -296,10 +339,7 @@ export default {
       try { keyUrl = decodeURIComponent(target); } catch {}
 
       const upstream = await fetch(keyUrl, {
-        headers: {
-          ...ORIGIN_HEADERS,
-          Accept: "*/*",
-        },
+        headers: originHeadersFor(keyUrl),
       });
 
       const headers = new Headers(corsHeaders());
@@ -315,7 +355,8 @@ export default {
       const target = url.searchParams.get("u");
       const exp = url.searchParams.get("exp");
       const sig = url.searchParams.get("sig");
-      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
+      const requireSignedVal = (env.REQUIRE_SIGNED || env.REQUIRE_SIGNATURE || "").toLowerCase();
+      const requireSigned = requireSignedVal === "true";
 
       if (!target) {
         return new Response("missing u", { status: 400, headers: corsHeaders() });
@@ -332,26 +373,25 @@ export default {
       } catch {}
 
       const reqRange = request.headers.get("Range");
-      const fetchHeaders: Record<string, string> = {
-        ...ORIGIN_HEADERS,
-        Accept: "*/*",
+      const headers = {
+        ...originHeadersFor(segmentUrl),
+        ...(reqRange ? { Range: reqRange } : {}),
       };
-      if (reqRange) fetchHeaders["Range"] = reqRange;
 
-      const upstream = await fetch(segmentUrl, { headers: fetchHeaders });
+      const upstream = await fetch(segmentUrl, { headers });
 
-      const headers = new Headers(corsHeaders());
-      headers.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");
-      headers.set("Accept-Ranges", "bytes");
+      const resHeaders = new Headers(corsHeaders());
+      resHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");
+      resHeaders.set("Accept-Ranges", "bytes");
       if (upstream.headers.get("Content-Range")) {
-        headers.set("Content-Range", upstream.headers.get("Content-Range")!);
+        resHeaders.set("Content-Range", upstream.headers.get("Content-Range")!);
       }
       if (upstream.headers.get("Content-Length")) {
-        headers.set("Content-Length", upstream.headers.get("Content-Length")!);
+        resHeaders.set("Content-Length", upstream.headers.get("Content-Length")!);
       }
-      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      resHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
 
-      return new Response(upstream.body, { status: upstream.status, headers });
+      return new Response(upstream.body, { status: upstream.status, headers: resHeaders });
     }
 
     return new Response("Not found", { status: 404, headers: corsHeaders() });
