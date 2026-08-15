@@ -108,6 +108,7 @@ function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: s
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const apiBase = (env.API_BASE_URL || "https://lumenstream-api.onrender.com").replace(/\/$/, "");
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders() });
@@ -135,8 +136,12 @@ export default {
         });
       }
 
-      // Fetch video metadata from API
-      let metaRes = await fetch(`${env.API_BASE_URL}/api/videos/uuid/${uuid}`);
+      // Fetch video metadata from API (support both /api/videos/uuid/:uuid and /api/videos/:uuid)
+      let metaRes = await fetch(`${apiBase}/api/videos/uuid/${uuid}`);
+      if (!metaRes.ok) {
+        metaRes = await fetch(`${apiBase}/api/videos/${uuid}`);
+      }
+
       if (!metaRes.ok) {
         return new Response(JSON.stringify({ error: "Video not found" }), {
           status: 404,
@@ -144,11 +149,7 @@ export default {
         });
       }
 
-      let video = (await metaRes.json()) as {
-        m3u8Links?: any;
-        directVideoLinks?: any;
-        status?: string;
-      };
+      let video = (await metaRes.json()) as any;
 
       if (video.status === "dead") {
         return new Response(JSON.stringify({ error: "Stream unavailable" }), {
@@ -157,46 +158,52 @@ export default {
         });
       }
 
+      // Collect candidate links with multi-casing support (m3u8Links, m3u8_links, directVideoLinks, direct_video_links, videoUrl, video_url)
       const collectCandidateLinks = (vData: any): string[] => {
         const links: string[] = [];
-        let m3u8List = vData.m3u8Links;
-        if (typeof m3u8List === "string") {
-          try { m3u8List = JSON.parse(m3u8List); } catch { m3u8List = [m3u8List]; }
-        }
-        if (Array.isArray(m3u8List)) {
-          for (const item of m3u8List) {
-            if (typeof item === "string" && item.trim()) links.push(item.trim());
-            else if (item && typeof item === "object" && item.url) links.push(item.url);
-          }
-        }
+        const fields = [
+          vData.m3u8Links,
+          vData.m3u8_links,
+          vData.directVideoLinks,
+          vData.direct_video_links,
+          vData.videoUrl,
+          vData.video_url,
+        ];
 
-        let directList = vData.directVideoLinks;
-        if (typeof directList === "string") {
-          try { directList = JSON.parse(directList); } catch { directList = [directList]; }
-        }
-        if (Array.isArray(directList)) {
-          for (const item of directList) {
-            if (typeof item === "string" && item.trim()) links.push(item.trim());
-            else if (item && typeof item === "object" && item.url) links.push(item.url);
+        for (const field of fields) {
+          if (!field) continue;
+          let list = field;
+          if (typeof list === "string") {
+            try { list = JSON.parse(list); } catch { list = [list]; }
+          }
+          if (Array.isArray(list)) {
+            for (const item of list) {
+              if (typeof item === "string" && item.trim()) links.push(item.trim());
+              else if (item && typeof item === "object" && item.url) links.push(item.url);
+            }
+          } else if (typeof list === "string" && list.trim()) {
+            links.push(list.trim());
           }
         }
-        return links;
+        return [...new Set(links)];
       };
 
       let candidateLinks = collectCandidateLinks(video);
+
+      const reqRange = request.headers.get("Range");
+      const fetchHeaders: Record<string, string> = {
+        ...ORIGIN_HEADERS,
+        Accept: "*/*",
+      };
+      if (reqRange) fetchHeaders["Range"] = reqRange;
 
       // Try fetching candidate stream links
       let upstreamRes: Response | null = null;
       let workingLink = "";
       for (const link of candidateLinks) {
         try {
-          const res = await fetch(link, {
-            headers: {
-              ...ORIGIN_HEADERS,
-              Accept: "*/*",
-            },
-          });
-          if (res.ok) {
+          const res = await fetch(link, { headers: fetchHeaders });
+          if (res.ok || res.status === 206) {
             upstreamRes = res;
             workingLink = link;
             break;
@@ -204,10 +211,10 @@ export default {
         } catch {}
       }
 
-      // If all candidate links failed (expired tokens), trigger auto-refresh from API
+      // If candidate links failed (expired tokens or empty links), trigger auto-refresh from API
       if (!upstreamRes) {
         try {
-          const refreshRes = await fetch(`${env.API_BASE_URL}/api/videos/${uuid}/refresh`, {
+          const refreshRes = await fetch(`${apiBase}/api/videos/${uuid}/refresh`, {
             method: "POST",
           });
           if (refreshRes.ok) {
@@ -215,13 +222,8 @@ export default {
             const newLinks = collectCandidateLinks(refreshedVideo);
             for (const link of newLinks) {
               try {
-                const res = await fetch(link, {
-                  headers: {
-                    ...ORIGIN_HEADERS,
-                    Accept: "*/*",
-                  },
-                });
-                if (res.ok) {
+                const res = await fetch(link, { headers: fetchHeaders });
+                if (res.ok || res.status === 206) {
                   upstreamRes = res;
                   workingLink = link;
                   break;
@@ -233,8 +235,8 @@ export default {
       }
 
       if (!upstreamRes) {
-        return new Response(JSON.stringify({ error: "Upstream stream links expired and refresh failed" }), {
-          status: 502,
+        return new Response(JSON.stringify({ error: "No stream" }), {
+          status: 404,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
@@ -258,11 +260,18 @@ export default {
           },
         });
       } else {
-        // Direct MP4 or video stream pipe
+        // Direct MP4 video stream pipe with Range & Partial Content support
         const headers = new Headers(corsHeaders());
         headers.set("Content-Type", contentType || "video/mp4");
+        headers.set("Accept-Ranges", "bytes");
+        if (upstreamRes.headers.get("Content-Range")) {
+          headers.set("Content-Range", upstreamRes.headers.get("Content-Range")!);
+        }
+        if (upstreamRes.headers.get("Content-Length")) {
+          headers.set("Content-Length", upstreamRes.headers.get("Content-Length")!);
+        }
         headers.set("Cache-Control", "public, max-age=3600");
-        return new Response(upstreamRes.body, { status: 200, headers });
+        return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
       }
     }
 
@@ -322,15 +331,24 @@ export default {
         segmentUrl = decodeURIComponent(target);
       } catch {}
 
-      const upstream = await fetch(segmentUrl, {
-        headers: {
-          ...ORIGIN_HEADERS,
-          Accept: "*/*",
-        },
-      });
+      const reqRange = request.headers.get("Range");
+      const fetchHeaders: Record<string, string> = {
+        ...ORIGIN_HEADERS,
+        Accept: "*/*",
+      };
+      if (reqRange) fetchHeaders["Range"] = reqRange;
+
+      const upstream = await fetch(segmentUrl, { headers: fetchHeaders });
 
       const headers = new Headers(corsHeaders());
       headers.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");
+      headers.set("Accept-Ranges", "bytes");
+      if (upstream.headers.get("Content-Range")) {
+        headers.set("Content-Range", upstream.headers.get("Content-Range")!);
+      }
+      if (upstream.headers.get("Content-Length")) {
+        headers.set("Content-Length", upstream.headers.get("Content-Length")!);
+      }
       headers.set("Cache-Control", "public, max-age=31536000, immutable");
 
       return new Response(upstream.body, { status: upstream.status, headers });
