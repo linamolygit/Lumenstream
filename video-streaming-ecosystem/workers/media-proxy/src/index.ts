@@ -19,8 +19,18 @@ function originHeadersFor(link: string): Record<string, string> {
     const u = new URL(link);
     const host = u.hostname.toLowerCase();
 
-    // xHamster HLS streams require xhamster origin & referer
-    if (host.includes("xhamster") || host.includes("xh") || (host.includes("sex303") === false && link.includes(".m3u8"))) {
+    // Sex303 / files4host / direct MP4: ONLY minimal headers with matching origin
+    if (host.includes("files4host") || host.includes("sex303") || link.endsWith(".mp4") || link.includes(".mp4?")) {
+      return {
+        "User-Agent": ua,
+        "Accept": "*/*",
+        "Referer": `${u.origin}/`,
+        "Origin": u.origin,
+      };
+    }
+
+    // xHamster / xh domains: xHamster origin headers
+    if (host.includes("xhamster") || host.includes("newxh") || host.includes("xhcdn")) {
       return {
         "User-Agent": ua,
         "Referer": "https://xhamster.com/",
@@ -29,7 +39,7 @@ function originHeadersFor(link: string): Record<string, string> {
       };
     }
 
-    // Direct MP4 / files4host / sex303 / custom CDNs: use own origin/referer
+    // Default fallback for generic media hosts
     return {
       "User-Agent": ua,
       "Referer": `${u.origin}/`,
@@ -215,7 +225,6 @@ export default {
       };
 
       let candidateLinks = collectCandidateLinks(video);
-
       const reqRange = request.headers.get("Range");
 
       // Try fetching candidate stream links using dynamic per-link origin headers

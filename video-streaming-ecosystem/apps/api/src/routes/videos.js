@@ -120,11 +120,22 @@ const handlePlay = async (req, res) => {
       if (refreshed) video = refreshed;
     }
 
-    const playUrl = signWorkerUrl(video.uuid, 900); // 15 minute exp
+    // Check if stream link is IP-bound (data=74.220.52.6)
+    const rawLinks = [video.m3u8Links, video.directVideoLinks].map(l => typeof l === 'string' ? l : JSON.stringify(l)).join(' ');
+    const isIpLocked = /data=\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(rawLinks);
+    const apiBase = (process.env.API_BASE_URL || 'https://lumenstream-api.onrender.com').replace(/\/$/, '');
+
+    let playUrl = signWorkerUrl(video.uuid, 900); // Default Cloudflare Worker
+    if (isIpLocked) {
+      // If stream URL has IP lock, route through Express API proxy (matching Render Scraper IP!)
+      playUrl = `${apiBase}/api/videos/proxy-stream?uuid=${video.uuid}`;
+    }
+
     res.json({
       uuid: video.uuid,
       slug: video.slug,
       playUrl,
+      isIpLocked,
       expiresIn: 900,
     });
   } catch (err) {
@@ -134,6 +145,94 @@ const handlePlay = async (req, res) => {
 
 router.get('/play/:identifier', handlePlay);
 router.get('/:identifier/play', handlePlay);
+
+// GET /api/videos/proxy-stream?uuid=... (Render IP Media Proxy for IP-locked xHamster streams)
+router.get('/proxy-stream', async (req, res) => {
+  try {
+    const { uuid } = req.query;
+    if (!uuid) return res.status(400).json({ error: 'uuid required' });
+
+    const video = await prisma.video.findUnique({ where: { uuid: String(uuid) } });
+    if (!video || video.status === 'dead') {
+      return res.status(404).json({ error: 'Stream unavailable' });
+    }
+
+    const collectLinks = (v) => {
+      const links = [];
+      const fields = [v.m3u8Links, v.directVideoLinks];
+      for (const field of fields) {
+        if (!field) continue;
+        let list = field;
+        if (typeof list === 'string') {
+          try { list = JSON.parse(list); } catch { list = [list]; }
+        }
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            if (typeof item === 'string' && item.trim()) links.push(item.trim());
+            else if (item && item.url) links.push(item.url);
+          }
+        }
+      }
+      return [...new Set(links)];
+    };
+
+    const candidateLinks = collectLinks(video);
+    if (!candidateLinks.length) {
+      return res.status(404).json({ error: 'No stream links found' });
+    }
+
+    const range = req.headers.range;
+    let upstreamRes = null;
+
+    for (const link of candidateLinks) {
+      try {
+        const u = new URL(link);
+        const isXh = u.hostname.includes('xhamster') || u.hostname.includes('xhcdn');
+        const headers = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '*/*',
+          ...(isXh ? { 'Referer': 'https://xhamster.com/', 'Origin': 'https://xhamster.com' } : { 'Referer': `${u.origin}/` }),
+          ...(range ? { Range: range } : {}),
+        };
+
+        const response = await fetch(link, { headers });
+        if (response.ok || response.status === 206) {
+          upstreamRes = response;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!upstreamRes) {
+      return res.status(502).json({ error: 'Upstream stream connection failed' });
+    }
+
+    const contentType = upstreamRes.headers.get('Content-Type') || 'video/mp4';
+    res.status(upstreamRes.status);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (upstreamRes.headers.get('Accept-Ranges')) res.setHeader('Accept-Ranges', upstreamRes.headers.get('Accept-Ranges'));
+    if (upstreamRes.headers.get('Content-Range')) res.setHeader('Content-Range', upstreamRes.headers.get('Content-Range'));
+    if (upstreamRes.headers.get('Content-Length')) res.setHeader('Content-Length', upstreamRes.headers.get('Content-Length'));
+
+    const nodeStream = upstreamRes.body;
+    if (nodeStream && typeof nodeStream.pipe === 'function') {
+      nodeStream.pipe(res);
+    } else if (nodeStream) {
+      const reader = nodeStream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/videos?limit=24&sort=latest|trending|featured&q=...
 router.get('/', async (req, res) => {
