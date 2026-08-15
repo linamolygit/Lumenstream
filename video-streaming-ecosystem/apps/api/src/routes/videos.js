@@ -112,7 +112,10 @@ router.get('/play/:identifier', async (req, res) => {
     const isStale = !lastChecked || (now.getTime() - lastChecked.getTime()) > 1800 * 1000;
     const hasStreams = video.m3u8Links || video.directVideoLinks;
 
-    if (forceRefresh || isStale || !hasStreams) {
+    // Stale-While-Revalidate (SWR): If stale, serve cached stream INSTANTLY (10ms) & refresh in background!
+    if (isStale && hasStreams && !forceRefresh) {
+      singleflightRefresh(video.uuid, video.sourcePageUrl).catch(() => null);
+    } else if (forceRefresh || !hasStreams) {
       const refreshed = await singleflightRefresh(video.uuid, video.sourcePageUrl);
       if (refreshed) video = refreshed;
     }
