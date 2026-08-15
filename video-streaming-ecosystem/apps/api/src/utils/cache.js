@@ -30,6 +30,12 @@ export async function setCache(key, value, ttlSeconds = 300) {
   } catch {}
 }
 
+export async function delCache(key) {
+  try {
+    memoryCache.delete(key);
+  } catch {}
+}
+
 export async function clearCache(pattern) {
   try {
     if (!pattern) {
