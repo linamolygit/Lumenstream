@@ -260,15 +260,20 @@ router.get('/slug/:slug', async (req, res) => {
   }
 });
 
-// GET /api/videos/uuid/:uuid
-router.get('/uuid/:uuid', async (req, res) => {
+// GET /api/videos/uuid/:uuid or /api/videos/:uuid
+const handleUuidLookup = async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
-    const uuidKey = `video_uuid_${req.params.uuid}`;
+    const uuid = req.params.uuid || req.params.identifier;
+    const uuidKey = `video_uuid_${uuid}`;
     const cached = await getCache(uuidKey);
     if (cached) return res.json(cached);
 
-    const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
+    const video = await prisma.video.findFirst({
+      where: {
+        OR: [{ uuid }, { slug: uuid }],
+      },
+    });
     if (!video) return res.status(404).json({ error: 'Video not found' });
 
     const result = mapVideo(video, true); // worker needs raw streams for proxying
@@ -277,6 +282,13 @@ router.get('/uuid/:uuid', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+router.get('/uuid/:uuid', handleUuidLookup);
+router.get('/:uuid', (req, res, next) => {
+  // Prevent matching reserved route sub-paths like /search or /play
+  if (['search', 'play', 'uuid', 'slug'].includes(req.params.uuid)) return next();
+  handleUuidLookup(req, res);
 });
 
 // POST /api/videos/:uuid/view
