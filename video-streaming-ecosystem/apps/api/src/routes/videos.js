@@ -1,11 +1,64 @@
 import express from 'express';
+import crypto from 'crypto';
 import prisma from '../utils/prisma.js';
-import { getCache, setCache } from '../utils/cache.js';
+import { getCache, setCache, delCache } from '../utils/cache.js';
 
 const router = express.Router();
 
-function mapVideo(v) {
-  return {
+const refreshPromises = new Map();
+
+function signWorkerUrl(uuid, expSeconds = 900) {
+  const workerBase = (process.env.WORKER_URL || 'https://lumenstream-media-proxy.workers.dev').replace(/\/$/, '');
+  const secret = process.env.STREAM_SIGN_SECRET || 'super-long-random-secret-key-change-this';
+  const exp = Math.floor(Date.now() / 1000) + expSeconds;
+  const message = `${uuid}:${exp}`;
+  const sigFull = crypto.createHmac('sha256', secret).update(message).digest('hex');
+  const sig = sigFull.slice(0, 32);
+  return `${workerBase}/api/media?uuid=${encodeURIComponent(uuid)}&exp=${exp}&sig=${sig}`;
+}
+
+async function singleflightRefresh(uuid, sourcePageUrl) {
+  if (refreshPromises.has(uuid)) {
+    return refreshPromises.get(uuid);
+  }
+
+  const promise = (async () => {
+    try {
+      const scraperBase = process.env.SCRAPER_URL || 'https://lumenstream-scraper.onrender.com';
+      const scraperRes = await fetch(`${scraperBase}/refresh/single`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uuid }),
+      });
+
+      if (!scraperRes.ok && sourcePageUrl) {
+        await fetch(`${scraperBase}/scrape/single`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: sourcePageUrl }),
+        }).catch(() => {});
+      }
+
+      const updated = await prisma.video.findUnique({ where: { uuid } });
+      if (updated) {
+        await delCache(`video_uuid_${updated.uuid}`);
+        if (updated.slug) await delCache(`video_slug_${updated.slug}`);
+      }
+      return updated;
+    } catch (err) {
+      console.error(`[Singleflight Refresh Error for ${uuid}]:`, err);
+      return null;
+    } finally {
+      refreshPromises.delete(uuid);
+    }
+  })();
+
+  refreshPromises.set(uuid, promise);
+  return promise;
+}
+
+function mapVideo(v, includeRawStreams = false) {
+  const obj = {
     id: v.id?.toString?.() || v.id,
     uuid: v.uuid,
     title: v.title,
@@ -21,8 +74,6 @@ function mapVideo(v) {
     thumbnails: v.thumbnails,
     sprite: v.sprite,
     previewVideos: v.previewVideos,
-    m3u8Links: v.m3u8Links,
-    directVideoLinks: v.directVideoLinks,
     likes: v.likes || 0,
     publishedAt: v.publishedAt,
     publishedRelative: v.publishedRelative,
@@ -31,7 +82,52 @@ function mapVideo(v) {
     status: v.status,
     createdAt: v.createdAt,
   };
+
+  if (includeRawStreams) {
+    obj.m3u8Links = v.m3u8Links;
+    obj.directVideoLinks = v.directVideoLinks;
+  }
+
+  return obj;
 }
+
+// GET /api/play/:uuid or /api/play/slug/:identifier
+router.get('/play/:identifier', async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const forceRefresh = req.query.forceRefresh === 'true';
+
+    let video = await prisma.video.findFirst({
+      where: {
+        OR: [{ uuid: identifier }, { slug: identifier }],
+      },
+    });
+
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+    if (video.status === 'dead') return res.status(410).json({ error: 'Stream unavailable' });
+
+    // Check m3u8 freshness (30 min TTL = 1800s)
+    const now = new Date();
+    const lastChecked = video.lastCheckedAt ? new Date(video.lastCheckedAt) : null;
+    const isStale = !lastChecked || (now.getTime() - lastChecked.getTime()) > 1800 * 1000;
+    const hasStreams = video.m3u8Links || video.directVideoLinks;
+
+    if (forceRefresh || isStale || !hasStreams) {
+      const refreshed = await singleflightRefresh(video.uuid, video.sourcePageUrl);
+      if (refreshed) video = refreshed;
+    }
+
+    const playUrl = signWorkerUrl(video.uuid, 900); // 15 minute exp
+    res.json({
+      uuid: video.uuid,
+      slug: video.slug,
+      playUrl,
+      expiresIn: 900,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/videos?limit=24&sort=latest|trending|featured&q=...
 router.get('/', async (req, res) => {
@@ -74,7 +170,7 @@ router.get('/', async (req, res) => {
     ]);
 
     const result = {
-      data: data.map(mapVideo),
+      data: data.map((v) => mapVideo(v, false)),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
 
@@ -118,7 +214,7 @@ router.get('/search', async (req, res) => {
     ]);
 
     const result = {
-      data: data.map(mapVideo),
+      data: data.map((v) => mapVideo(v, false)),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
 
@@ -148,7 +244,7 @@ router.get('/slug/:slug', async (req, res) => {
     });
 
     const result = {
-      ...mapVideo(video),
+      ...mapVideo(video, false),
       views: Number(video.views) + 1,
       likesCount,
     };
@@ -169,7 +265,7 @@ router.get('/uuid/:uuid', async (req, res) => {
     const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
     if (!video) return res.status(404).json({ error: 'Video not found' });
 
-    const result = mapVideo(video);
+    const result = mapVideo(video, true); // worker needs raw streams for proxying
     await setCache(uuidKey, result, 120);
     res.json(result);
   } catch (err) {
@@ -197,32 +293,12 @@ router.post('/:uuid/refresh', async (req, res) => {
     const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
     if (!video) return res.status(404).json({ error: 'Video not found' });
 
-    const scraperBase = process.env.SCRAPER_URL || 'https://lumenstream-scraper.onrender.com';
-    const scraperRes = await fetch(`${scraperBase}/refresh/single`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uuid: req.params.uuid }),
-    });
-
-    if (!scraperRes.ok) {
-      // Fallback: retry with /scrape/single if /refresh/single fails
-      if (video.sourcePageUrl) {
-        await fetch(`${scraperBase}/scrape/single`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: video.sourcePageUrl }),
-        }).catch(() => {});
-      }
-    }
-
-    const updatedVideo = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
+    const updatedVideo = await singleflightRefresh(video.uuid, video.sourcePageUrl);
     if (updatedVideo) {
-      await delCache(`video_uuid_${updatedVideo.uuid}`);
-      if (updatedVideo.slug) await delCache(`video_slug_${updatedVideo.slug}`);
-      return res.json(mapVideo(updatedVideo));
+      return res.json(mapVideo(updatedVideo, true));
     }
 
-    res.json(mapVideo(video));
+    res.json(mapVideo(video, true));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

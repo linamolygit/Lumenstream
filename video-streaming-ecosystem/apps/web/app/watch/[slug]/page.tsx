@@ -194,6 +194,14 @@ export default function WatchPage() {
         setLikesCount(data.likesCount || 0);
         setViewsCount(data.views || 0);
 
+        // Fetch short-lived signed worker play URL from Play API
+        fetch(`${apiBase}/api/videos/play/${data.uuid}`)
+          .then((r) => r.json())
+          .then((pData) => {
+            if (pData.playUrl && isMounted) setSignedPlayUrl(pData.playUrl);
+          })
+          .catch(() => {});
+
         // Record real view increment
         fetch(`${apiBase}/api/videos/${data.uuid}/view`, { method: "POST" })
           .then((r) => r.json())
@@ -248,11 +256,14 @@ export default function WatchPage() {
     };
   }, [slug, apiBase, token]);
 
-  // Secure stream URL (via Media Proxy worker)
+  const [signedPlayUrl, setSignedPlayUrl] = useState<string>("");
+
+  // Secure stream URL (via Media Proxy worker with signed HMAC short URL fallback)
   const streamUrl = useMemo(() => {
+    if (signedPlayUrl) return signedPlayUrl;
     if (!video?.uuid) return "";
     return `${workerBase}/api/media?uuid=${video.uuid}`;
-  }, [video?.uuid, workerBase]);
+  }, [signedPlayUrl, video?.uuid, workerBase]);
 
   // Handle Like Toggle
   const handleLike = async () => {
@@ -425,10 +436,10 @@ export default function WatchPage() {
                         setStreamError(false);
                         if (video?.uuid) {
                           try {
-                            const res = await fetch(`${apiBase}/api/videos/${video.uuid}/refresh`, { method: "POST" });
+                            const res = await fetch(`${apiBase}/api/videos/play/${video.uuid}?forceRefresh=true`);
                             if (res.ok) {
-                              const updated = await res.json();
-                              setVideo(updated);
+                              const pData = await res.json();
+                              if (pData.playUrl) setSignedPlayUrl(pData.playUrl);
                             }
                           } catch {}
                         }
@@ -450,13 +461,15 @@ export default function WatchPage() {
                   onError={async () => {
                     if (video?.uuid) {
                       try {
-                        const res = await fetch(`${apiBase}/api/videos/${video.uuid}/refresh`, { method: "POST" });
+                        const res = await fetch(`${apiBase}/api/videos/play/${video.uuid}?forceRefresh=true`);
                         if (res.ok) {
-                          const updated = await res.json();
-                          setVideo(updated);
-                          setStreamError(false);
-                          setPlayerKey((k) => k + 1);
-                          return;
+                          const pData = await res.json();
+                          if (pData.playUrl) {
+                            setSignedPlayUrl(pData.playUrl);
+                            setStreamError(false);
+                            setPlayerKey((k) => k + 1);
+                            return;
+                          }
                         }
                       } catch {}
                     }
