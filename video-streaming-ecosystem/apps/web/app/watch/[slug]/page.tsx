@@ -419,15 +419,24 @@ export default function WatchPage() {
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/90 backdrop-blur-sm">
                   <div className="text-center">
                     <AlertCircle className="mx-auto h-10 w-10 text-amber-400" />
-                    <p className="mt-2 font-semibold text-white">Stream unavailable</p>
+                    <p className="mt-2 font-semibold text-white">Stream link expired</p>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         setStreamError(false);
+                        if (video?.uuid) {
+                          try {
+                            const res = await fetch(`${apiBase}/api/videos/${video.uuid}/refresh`, { method: "POST" });
+                            if (res.ok) {
+                              const updated = await res.json();
+                              setVideo(updated);
+                            }
+                          } catch {}
+                        }
                         setPlayerKey((k) => k + 1);
                       }}
                       className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 transition active:scale-95"
                     >
-                      <RefreshCw className="h-4 w-4" /> Retry Stream
+                      <RefreshCw className="h-4 w-4" /> Refresh & Play Stream
                     </button>
                   </div>
                 </div>
@@ -438,7 +447,21 @@ export default function WatchPage() {
                   src={streamUrl}
                   poster={video.thumbnail}
                   title={video.title}
-                  onError={() => setStreamError(true)}
+                  onError={async () => {
+                    if (video?.uuid) {
+                      try {
+                        const res = await fetch(`${apiBase}/api/videos/${video.uuid}/refresh`, { method: "POST" });
+                        if (res.ok) {
+                          const updated = await res.json();
+                          setVideo(updated);
+                          setStreamError(false);
+                          setPlayerKey((k) => k + 1);
+                          return;
+                        }
+                      } catch {}
+                    }
+                    setStreamError(true);
+                  }}
                 />
               )}
             </div>

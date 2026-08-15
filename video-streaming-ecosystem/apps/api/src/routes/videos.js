@@ -191,4 +191,41 @@ router.post('/:uuid/view', async (req, res) => {
   }
 });
 
+// POST /api/videos/:uuid/refresh (Trigger stream link re-extraction for expired tokens)
+router.post('/:uuid/refresh', async (req, res) => {
+  try {
+    const video = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+
+    const scraperBase = process.env.SCRAPER_URL || 'https://lumenstream-scraper.onrender.com';
+    const scraperRes = await fetch(`${scraperBase}/refresh/single`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid: req.params.uuid }),
+    });
+
+    if (!scraperRes.ok) {
+      // Fallback: retry with /scrape/single if /refresh/single fails
+      if (video.sourcePageUrl) {
+        await fetch(`${scraperBase}/scrape/single`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: video.sourcePageUrl }),
+        }).catch(() => {});
+      }
+    }
+
+    const updatedVideo = await prisma.video.findUnique({ where: { uuid: req.params.uuid } });
+    if (updatedVideo) {
+      await delCache(`video_uuid_${updatedVideo.uuid}`);
+      if (updatedVideo.slug) await delCache(`video_slug_${updatedVideo.slug}`);
+      return res.json(mapVideo(updatedVideo));
+    }
+
+    res.json(mapVideo(video));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

@@ -13,6 +13,12 @@ function corsHeaders() {
   };
 }
 
+const ORIGIN_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Referer": "https://xhamster.com/",
+  "Origin": "https://xhamster.com",
+};
+
 async function hmacHex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -33,10 +39,9 @@ async function verifySigned(
   secret: string,
   requireSigned: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  // If signed params missing
   if (!exp && !sig) {
     if (requireSigned) return { ok: false, error: "Signed link required" };
-    return { ok: true }; // allow open uuid links
+    return { ok: true };
   }
 
   if (!exp || !sig) return { ok: false, error: "Invalid signature params" };
@@ -50,7 +55,6 @@ async function verifySigned(
   const expectedFull = await hmacHex(secret, `${uuid}:${exp}`);
   const expected = expectedFull.slice(0, 32);
 
-  // constant-time-ish compare
   if (expected.length !== sig.length) return { ok: false, error: "Invalid signature" };
   let diff = 0;
   for (let i = 0; i < expected.length; i++) {
@@ -61,16 +65,39 @@ async function verifySigned(
   return { ok: true };
 }
 
-function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: string): string {
-  // Keep exp/sig on segment requests if present
+function resolveUrl(relativeOrAbsolute: string, baseUrl: string): string {
+  try {
+    return new URL(relativeOrAbsolute, baseUrl).toString();
+  } catch {
+    return relativeOrAbsolute;
+  }
+}
+
+function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: string, playlistBaseUrl: string): string {
   const q = search.startsWith("?") ? search : search ? `?${search}` : "";
   return body
     .split("\n")
     .map((line) => {
       const t = line.trim();
-      if (!t || t.startsWith("#")) return line;
-      // absolute or relative segment URL → proxy through worker
-      const encoded = encodeURIComponent(t);
+      if (!t) return line;
+
+      // 1. Rewrite AES-128 Key URIs: #EXT-X-KEY:METHOD=AES-128,URI="..."
+      if (t.includes("#EXT-X-KEY:")) {
+        return t.replace(/URI="([^"]+)"/, (_, keyUri) => {
+          const absoluteKeyUrl = resolveUrl(keyUri, playlistBaseUrl);
+          const encoded = encodeURIComponent(absoluteKeyUrl);
+          const proxied = `${workerOrigin}/api/key?uuid=${encodeURIComponent(uuid)}&u=${encoded}${
+            q ? "&" + q.slice(1) : ""
+          }`;
+          return `URI="${proxied}"`;
+        });
+      }
+
+      if (t.startsWith("#")) return line;
+
+      // 2. Rewrite segment URLs (resolve relative paths first)
+      const absoluteSegmentUrl = resolveUrl(t, playlistBaseUrl);
+      const encoded = encodeURIComponent(absoluteSegmentUrl);
       return `${workerOrigin}/api/segment?uuid=${encodeURIComponent(uuid)}&u=${encoded}${
         q ? "&" + q.slice(1) : ""
       }`;
@@ -109,14 +136,15 @@ export default {
       }
 
       // Fetch video metadata from API
-      const metaRes = await fetch(`${env.API_BASE_URL}/api/videos/uuid/${uuid}`);
+      let metaRes = await fetch(`${env.API_BASE_URL}/api/videos/uuid/${uuid}`);
       if (!metaRes.ok) {
         return new Response(JSON.stringify({ error: "Video not found" }), {
           status: 404,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
-      const video = (await metaRes.json()) as {
+
+      let video = (await metaRes.json()) as {
         m3u8Links?: any;
         directVideoLinks?: any;
         status?: string;
@@ -129,46 +157,42 @@ export default {
         });
       }
 
-      // Collect all candidate stream URLs from m3u8Links and directVideoLinks
-      const candidateLinks: string[] = [];
-
-      let m3u8List = video.m3u8Links;
-      if (typeof m3u8List === "string") {
-        try { m3u8List = JSON.parse(m3u8List); } catch { m3u8List = [m3u8List]; }
-      }
-      if (Array.isArray(m3u8List)) {
-        for (const item of m3u8List) {
-          if (typeof item === "string" && item.trim()) candidateLinks.push(item.trim());
-          else if (item && typeof item === "object" && item.url) candidateLinks.push(item.url);
+      const collectCandidateLinks = (vData: any): string[] => {
+        const links: string[] = [];
+        let m3u8List = vData.m3u8Links;
+        if (typeof m3u8List === "string") {
+          try { m3u8List = JSON.parse(m3u8List); } catch { m3u8List = [m3u8List]; }
         }
-      }
-
-      let directList = video.directVideoLinks;
-      if (typeof directList === "string") {
-        try { directList = JSON.parse(directList); } catch { directList = [directList]; }
-      }
-      if (Array.isArray(directList)) {
-        for (const item of directList) {
-          if (typeof item === "string" && item.trim()) candidateLinks.push(item.trim());
-          else if (item && typeof item === "object" && item.url) candidateLinks.push(item.url);
+        if (Array.isArray(m3u8List)) {
+          for (const item of m3u8List) {
+            if (typeof item === "string" && item.trim()) links.push(item.trim());
+            else if (item && typeof item === "object" && item.url) links.push(item.url);
+          }
         }
-      }
 
-      if (!candidateLinks.length) {
-        return new Response(JSON.stringify({ error: "No stream URLs available" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json", ...corsHeaders() },
-        });
-      }
+        let directList = vData.directVideoLinks;
+        if (typeof directList === "string") {
+          try { directList = JSON.parse(directList); } catch { directList = [directList]; }
+        }
+        if (Array.isArray(directList)) {
+          for (const item of directList) {
+            if (typeof item === "string" && item.trim()) links.push(item.trim());
+            else if (item && typeof item === "object" && item.url) links.push(item.url);
+          }
+        }
+        return links;
+      };
 
-      // Try fetching candidate links until one succeeds
+      let candidateLinks = collectCandidateLinks(video);
+
+      // Try fetching candidate stream links
       let upstreamRes: Response | null = null;
       let workingLink = "";
       for (const link of candidateLinks) {
         try {
           const res = await fetch(link, {
             headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              ...ORIGIN_HEADERS,
               Accept: "*/*",
             },
           });
@@ -180,8 +204,36 @@ export default {
         } catch {}
       }
 
+      // If all candidate links failed (expired tokens), trigger auto-refresh from API
       if (!upstreamRes) {
-        return new Response(JSON.stringify({ error: "Upstream stream links failed" }), {
+        try {
+          const refreshRes = await fetch(`${env.API_BASE_URL}/api/videos/${uuid}/refresh`, {
+            method: "POST",
+          });
+          if (refreshRes.ok) {
+            const refreshedVideo = await refreshRes.json();
+            const newLinks = collectCandidateLinks(refreshedVideo);
+            for (const link of newLinks) {
+              try {
+                const res = await fetch(link, {
+                  headers: {
+                    ...ORIGIN_HEADERS,
+                    Accept: "*/*",
+                  },
+                });
+                if (res.ok) {
+                  upstreamRes = res;
+                  workingLink = link;
+                  break;
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+
+      if (!upstreamRes) {
+        return new Response(JSON.stringify({ error: "Upstream stream links expired and refresh failed" }), {
           status: 502,
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
@@ -195,7 +247,7 @@ export default {
         if (sig) signedQuery.set("sig", sig);
         const qs = signedQuery.toString();
 
-        const rewritten = rewriteM3u8(text, url.origin, uuid, qs);
+        const rewritten = rewriteM3u8(text, url.origin, uuid, qs, workingLink);
 
         return new Response(rewritten, {
           status: 200,
@@ -212,6 +264,40 @@ export default {
         headers.set("Cache-Control", "public, max-age=3600");
         return new Response(upstreamRes.body, { status: 200, headers });
       }
+    }
+
+    // GET /api/key?uuid=&u=&exp=&sig=
+    if (url.pathname === "/api/key") {
+      const uuid = url.searchParams.get("uuid") || "";
+      const target = url.searchParams.get("u");
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      const requireSigned = (env.REQUIRE_SIGNED || "").toLowerCase() === "true";
+
+      if (!target) {
+        return new Response("missing u", { status: 400, headers: corsHeaders() });
+      }
+
+      const check = await verifySigned(uuid, exp, sig, env.STREAM_SIGN_SECRET, requireSigned);
+      if (!check.ok) {
+        return new Response(check.error || "Forbidden", { status: 403, headers: corsHeaders() });
+      }
+
+      let keyUrl = target;
+      try { keyUrl = decodeURIComponent(target); } catch {}
+
+      const upstream = await fetch(keyUrl, {
+        headers: {
+          ...ORIGIN_HEADERS,
+          Accept: "*/*",
+        },
+      });
+
+      const headers = new Headers(corsHeaders());
+      headers.set("Content-Type", upstream.headers.get("Content-Type") || "application/octet-stream");
+      headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate");
+
+      return new Response(upstream.body, { status: upstream.status, headers });
     }
 
     // GET /api/segment?uuid=&u=&exp=&sig=
@@ -237,7 +323,10 @@ export default {
       } catch {}
 
       const upstream = await fetch(segmentUrl, {
-        headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
+        headers: {
+          ...ORIGIN_HEADERS,
+          Accept: "*/*",
+        },
       });
 
       const headers = new Headers(corsHeaders());
