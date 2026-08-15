@@ -7,27 +7,27 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
 import {
-  SquaresFour as OverviewIcon,
-  VideoCamera as VideosIcon,
-  MagnifyingGlassPlus as ScrapeIcon,
-  LinkSimple as StreamLinksIcon,
-  FolderSimple as CategoriesIcon,
-  UsersThree as UsersIcon,
-  ChatText as CommentsIcon,
-  TrendUp as AnalyticsIcon,
-  ClipboardText as ScrapeLogsIcon,
+  LayoutDashboard as OverviewIcon,
+  Film as VideosIcon,
+  SearchCode as ScrapeIcon,
+  Link2 as StreamLinksIcon,
+  Folder as CategoriesIcon,
+  Users as UsersIcon,
+  MessageSquare as CommentsIcon,
+  TrendingUp as AnalyticsIcon,
+  FileText as ScrapeLogsIcon,
   Wrench as ToolsIcon,
-  Gear as SettingsIcon,
-  GlobeHemisphereWest as WordpressIcon,
-  UserCircle as ProfileIcon,
-  SignOut as LogoutIcon,
-  ArrowSquareOut as ViewSiteIcon,
-  List as MenuIcon,
+  Settings as SettingsIcon,
+  Globe as WordpressIcon,
+  User as ProfileIcon,
+  LogOut as LogoutIcon,
+  ExternalLink as ViewSiteIcon,
+  Menu as MenuIcon,
   X as CloseIcon,
   Bell,
   Sun,
   Moon,
-} from "@phosphor-icons/react";
+} from "lucide-react";
 import { useTheme } from "next-themes";
 
 type NavItem = {
