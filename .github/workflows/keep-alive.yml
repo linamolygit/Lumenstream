@@ -1,0 +1,19 @@
+name: Keep Alive Render Free Tier
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free instance sleep
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Express API & Python Scraper
+        run: |
+          echo "Pinging Lumenstream API..."
+          curl -s -f "https://lumenstream-api.onrender.com/health" || true
+          echo "Pinging Lumenstream Scraper..."
+          curl -s -f "https://lumenstream-scraper.onrender.com/health" || true
+          echo "Keep-alive ping completed!"

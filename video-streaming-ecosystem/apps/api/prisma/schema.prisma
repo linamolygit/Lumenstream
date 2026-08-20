@@ -23,7 +23,9 @@ model User {
   id               BigInt    @id @default(autoincrement())
   name             String    @db.VarChar(120)
   email            String    @unique @db.VarChar(190)
-  passwordHash     String    @map("password_hash") @db.VarChar(255)
+  passwordHash     String?   @map("password_hash") @db.VarChar(255)
+  firebaseUid      String?   @unique @map("firebase_uid") @db.VarChar(128)
+  avatar           String?   @db.VarChar(1000)
   role             Role      @default(user)
   resetToken       String?   @map("reset_token") @db.VarChar(255)
   resetTokenExpiry DateTime? @map("reset_token_expiry")
@@ -87,6 +89,10 @@ model Video {
   @@index([channelName])
   @@index([status, createdAt])
   @@index([status, views])
+  @@index([status, isFeatured, createdAt])
+  @@index([status, title])
+  @@index([sourceSite, status])
+  @@index([lastCheckedAt])
   @@map("videos")
 }
 

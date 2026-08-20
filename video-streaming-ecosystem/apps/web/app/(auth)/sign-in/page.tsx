@@ -17,10 +17,11 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { BrandLogo } from "@/components/brand-logo";
 import { cn } from "@/lib/utils";
 
 export default function SignInPage() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const [authMethod, setAuthMethod] = useState<"email" | "phone">("email");
@@ -60,8 +61,16 @@ export default function SignInPage() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    alert("Redirecting to Google Authentication...");
+  const handleGoogleSignIn = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      setError(err.message || "Google Sign-In was cancelled or failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -104,13 +113,8 @@ export default function SignInPage() {
         >
           <div className="rounded-[28px] border border-white/60 bg-white/70 p-8 shadow-[0_20px_60px_rgba(80,60,180,0.12)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 sm:p-10">
             {/* Brand */}
-            <div className="mb-6 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-500 text-lg font-bold text-white shadow-lg shadow-violet-500/30">
-                L
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-                LumenStream
-              </h1>
+            <div className="mb-6 flex flex-col items-center justify-center text-center">
+              <BrandLogo size="lg" className="mb-2" />
               <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                 Welcome back! Sign in to continue.
               </p>

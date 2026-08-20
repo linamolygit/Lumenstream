@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { SidebarDrawer } from "./sidebar-drawer";
+import { BrandLogo } from "./brand-logo";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
@@ -78,19 +79,7 @@ export function Navbar() {
             </button>
 
             {/* Logo + Text */}
-            <Link href="/" className="flex items-center gap-2.5 shrink-0">
-              <Image
-                src="/logo-square.png"
-                alt="Lumenstream Logo"
-                width={34}
-                height={34}
-                priority
-                className="h-8.5 w-8.5 object-contain rounded-xl"
-              />
-              <span className="text-lg font-black tracking-tight text-neutral-900 dark:text-white">
-                Lumenstream
-              </span>
-            </Link>
+            <BrandLogo />
           </div>
 
           {/* Center: Search Bar with Exact Custom Search SVG */}

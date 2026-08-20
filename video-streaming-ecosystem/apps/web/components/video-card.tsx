@@ -42,14 +42,35 @@ export function VideoCard({ video }: { video: any }) {
     (Array.isArray(video.preview_videos) && video.preview_videos[0]) ||
     undefined;
 
-  // Mobile Scroll Intersection Observer (triggers preview when card is in center of viewport)
+  const [activeUuid, setActiveUuid] = useState<string | null>(null);
+
+  // Mobile Scroll Intersection Observer (ensures ONLY 1 single card previews at a time)
   useEffect(() => {
     if (!containerRef.current || !previewSrc) return;
+
+    const handlePreviewChange = (e: CustomEvent<{ activeUuid: string | null }>) => {
+      if (e.detail.activeUuid !== video.uuid) {
+        setHover(false);
+        setLoadingPreview(false);
+        const el = videoRef.current;
+        if (el) {
+          el.pause();
+          el.currentTime = 0;
+        }
+      }
+    };
+
+    window.addEventListener("active-preview-change" as any, handlePreviewChange);
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && window.innerWidth < 768) {
+          if (entry.isIntersecting && window.innerWidth < 768 && entry.intersectionRatio >= 0.75) {
+            window.dispatchEvent(
+              new CustomEvent("active-preview-change", {
+                detail: { activeUuid: video.uuid },
+              })
+            );
             setHover(true);
             setLoadingPreview(true);
             const el = videoRef.current;
@@ -57,41 +78,45 @@ export function VideoCard({ video }: { video: any }) {
               el.currentTime = 0;
               el.play().catch(() => setLoadingPreview(false));
             }
-          } else if (!entry.isIntersecting && window.innerWidth < 768) {
-            setHover(false);
-            setLoadingPreview(false);
-            const el = videoRef.current;
-            if (el) {
-              el.pause();
-              el.currentTime = 0;
-            }
           }
         });
       },
-      { threshold: 0.7 }
+      { threshold: [0.75, 0.9] }
     );
 
     observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [previewSrc]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("active-preview-change" as any, handlePreviewChange);
+    };
+  }, [previewSrc, video.uuid]);
 
   const onEnter = () => {
-    setHover(true);
-    const el = videoRef.current;
-    if (el && previewSrc) {
-      setLoadingPreview(true);
-      el.currentTime = 0;
-      el.play().catch(() => setLoadingPreview(false));
+    if (window.innerWidth >= 768) {
+      window.dispatchEvent(
+        new CustomEvent("active-preview-change", {
+          detail: { activeUuid: video.uuid },
+        })
+      );
+      setHover(true);
+      const el = videoRef.current;
+      if (el && previewSrc) {
+        setLoadingPreview(true);
+        el.currentTime = 0;
+        el.play().catch(() => setLoadingPreview(false));
+      }
     }
   };
 
   const onLeave = () => {
-    setHover(false);
-    setLoadingPreview(false);
-    const el = videoRef.current;
-    if (el) {
-      el.pause();
-      el.currentTime = 0;
+    if (window.innerWidth >= 768) {
+      setHover(false);
+      setLoadingPreview(false);
+      const el = videoRef.current;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
     }
   };
 

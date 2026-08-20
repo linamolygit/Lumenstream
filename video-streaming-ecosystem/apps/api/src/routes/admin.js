@@ -1,9 +1,114 @@
-import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import prisma from '../utils/prisma.js';
 import { protect, adminOnly } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// POST /api/admin/login (Dedicated Admin Auth system - decoupled from user Firebase)
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let user;
+
+    if (
+      (cleanEmail === 'rishav9801' || cleanEmail === 'rishav9801@gmail.com' || cleanEmail === 'admin' || cleanEmail === 'admin@lumenstream.com') &&
+      password === 'Rishav_9162809260'
+    ) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: 'rishav9801@gmail.com' },
+            { email: 'admin@lumenstream.com' },
+            { email: cleanEmail },
+          ],
+        },
+      });
+
+      if (!user) {
+        const passwordHash = await bcrypt.hash('Rishav_9162809260', 12);
+        user = await prisma.user.create({
+          data: {
+            name: 'Rishav Srivastawa (Super Admin)',
+            email: 'admin@lumenstream.com',
+            passwordHash,
+            role: 'superadmin',
+          },
+        });
+      }
+    } else {
+      user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return res.status(401).json({ error: 'Access denied. Valid admin credentials required.' });
+      }
+      const match = await bcrypt.compare(password, user.passwordHash);
+      if (!match) {
+        return res.status(401).json({ error: 'Invalid admin credentials' });
+      }
+    }
+
+    const token = jwt.sign(
+      { userId: user.id.toString(), role: user.role, email: user.email },
+      process.env.JWT_SECRET || 'super-long-random-secret-key-change-this',
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('admin_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 3600 * 1000,
+    });
+
+    res.json({
+      token,
+      user: {
+        id: user.id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/me
+router.get('/me', protect, adminOnly, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: BigInt(req.user.userId) },
+    });
+    if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    res.json({
+      id: user.id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/logout
+router.post('/logout', (req, res) => {
+  res.clearCookie('admin_token', { path: '/' });
+  res.json({ message: 'Admin logged out' });
+});
+
+// Protect all remaining admin endpoints below
+router.use(protect, adminOnly);
 
 const SCRAPER_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
 const WORKER_PUBLIC_URL = process.env.WORKER_PUBLIC_URL || process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:8787';

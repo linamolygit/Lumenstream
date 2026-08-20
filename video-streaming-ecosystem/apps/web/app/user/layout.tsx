@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/auth-context";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   House as Home,
   SquaresFour as LayoutDashboard,
@@ -104,14 +105,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           collapsed && !mobile ? "justify-center" : ""
         }`}
       >
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 shadow-lg shadow-violet-500/30">
-          <Play className="h-4 w-4 fill-white text-white" strokeWidth={0} />
-        </div>
-        {(!collapsed || mobile) && (
-          <span className="text-base font-bold tracking-tight text-white">
-            Lumen<span className="text-violet-400">Stream</span>
-          </span>
-        )}
+        <BrandLogo showText={!collapsed || mobile} size="sm" />
       </div>
 
       {/* Nav Sections */}

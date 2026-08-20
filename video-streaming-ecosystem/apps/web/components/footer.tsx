@@ -1,31 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { Heart } from "@phosphor-icons/react";
+import { Heart } from "lucide-react";
+import { BrandLogo } from "./brand-logo";
 
 export function Footer() {
   return (
-    <footer className="mt-16 border-t border-black/5 bg-neutral-50 px-4 py-8 text-sm text-neutral-600 dark:border-white/10 dark:bg-[#0a0a0a] dark:text-neutral-400">
-      <div className="mx-auto max-w-7xl space-y-6 text-center md:text-left">
+    <footer className="mt-auto border-t border-black/5 bg-neutral-50 px-4 py-8 text-sm text-neutral-600 dark:border-white/10 dark:bg-[#0a0a0a] dark:text-neutral-400">
+      <div className="mx-auto max-w-[1800px] space-y-6 text-center md:text-left">
         <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/logo-dark.png"
-              alt="LumenStream"
-              width={140}
-              height={35}
-              className="hidden dark:block h-7 w-auto object-contain"
-            />
-            <Image
-              src="/logo-light.png"
-              alt="LumenStream"
-              width={140}
-              height={35}
-              className="block dark:hidden h-7 w-auto object-contain"
-            />
-          </Link>
+          <BrandLogo />
 
           {/* Navigation Links */}
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-medium">

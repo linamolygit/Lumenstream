@@ -41,7 +41,7 @@ app.use('/api/play', (req, res, next) => {
 });
 app.use('/api/auth', authRouter);
 app.use('/api/user', userRouter);
-app.use('/api/admin', protect, adminOnly, adminRouter);
+app.use('/api/admin', adminRouter);
 
 // WordPress Plugin / VOD Proxy compatibility route
 app.get('/api/media', async (req, res) => {

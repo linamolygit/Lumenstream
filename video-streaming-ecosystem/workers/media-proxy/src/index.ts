@@ -108,6 +108,13 @@ function resolveUrl(relativeOrAbsolute: string, baseUrl: string): string {
   }
 }
 
+// Detect xHamster IP-locked tokens: contain /data=IP.ADDRESS-dvp/ in path.
+// These links ONLY work from the IP that scraped them (Render's IP).
+// Cloudflare Worker (always a different edge IP) will get 403 on these.
+function isIpLocked(link: string): boolean {
+  return /\/data=[\d.]+-dvp\//.test(link);
+}
+
 function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: string, playlistBaseUrl: string): string {
   const q = search.startsWith("?") ? search : search ? `?${search}` : "";
   return body
@@ -172,10 +179,14 @@ export default {
         });
       }
 
-      // Fetch video metadata from API (support /api/videos/uuid/:uuid and /api/videos/:uuid)
-      let metaRes = await fetch(`${apiBase}/api/videos/uuid/${uuid}`);
+      // Fetch video metadata from API — bypass cache with no-cache header so stale stream data isn't served
+      let metaRes = await fetch(`${apiBase}/api/videos/uuid/${uuid}`, {
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       if (!metaRes.ok) {
-        metaRes = await fetch(`${apiBase}/api/videos/${uuid}`);
+        metaRes = await fetch(`${apiBase}/api/videos/${uuid}`, {
+          headers: { 'Cache-Control': 'no-cache' },
+        });
       }
 
       if (!metaRes.ok) {
@@ -230,19 +241,25 @@ export default {
       // Try fetching candidate stream links using dynamic per-link origin headers
       let upstreamRes: Response | null = null;
       let workingLink = "";
+      const failedLinkStatuses: Record<string, number> = {};
       for (const link of candidateLinks) {
         try {
           const headers = {
             ...originHeadersFor(link),
             ...(reqRange ? { Range: reqRange } : {}),
           };
-          const res = await fetch(link, { headers });
+          // redirect: 'follow' ensures CDN 302→MP4 redirects are handled
+          const res = await fetch(link, { headers, redirect: 'follow' });
           if (res.ok || res.status === 206) {
             upstreamRes = res;
             workingLink = link;
             break;
+          } else {
+            failedLinkStatuses[link.slice(0, 80)] = res.status;
           }
-        } catch {}
+        } catch (e: any) {
+          failedLinkStatuses[link.slice(0, 80)] = -1; // network error
+        }
       }
 
       // If candidate links failed (expired tokens or empty links), trigger auto-refresh from API
@@ -260,16 +277,36 @@ export default {
                   ...originHeadersFor(link),
                   ...(reqRange ? { Range: reqRange } : {}),
                 };
-                const res = await fetch(link, { headers });
+                const res = await fetch(link, { headers, redirect: 'follow' });
                 if (res.ok || res.status === 206) {
                   upstreamRes = res;
                   workingLink = link;
                   break;
+                } else {
+                  failedLinkStatuses[link.slice(0, 80)] = res.status;
                 }
               } catch {}
             }
           }
         } catch {}
+      }
+
+      if (!upstreamRes) {
+        // Final fallback: if any candidate links are IP-locked (xHamster tokens),
+        // route through Render stream-proxy which has the correct IP
+        const hasIpLockedLinks = candidateLinks.some(isIpLocked);
+        if (hasIpLockedLinks) {
+          const proxyUrl = `${apiBase}/api/videos/${uuid}/stream-proxy`;
+          try {
+            const proxyHeaders: Record<string, string> = {};
+            if (reqRange) proxyHeaders['Range'] = reqRange;
+            const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders, redirect: 'follow' });
+            if (proxyRes.ok || proxyRes.status === 206) {
+              upstreamRes = proxyRes;
+              workingLink = proxyUrl;
+            }
+          } catch {}
+        }
       }
 
       if (!upstreamRes) {
@@ -283,6 +320,9 @@ export default {
               videoStatus: video?.status || "unknown",
               hasM3u8: !!(video?.m3u8Links || video?.m3u8_links),
               hasMp4: !!(video?.directVideoLinks || video?.direct_video_links),
+              m3u8LinksRaw: video?.m3u8Links ?? null,
+              directVideoLinksRaw: video?.directVideoLinks ?? null,
+              failedStatuses: failedLinkStatuses,
             },
           }),
           {

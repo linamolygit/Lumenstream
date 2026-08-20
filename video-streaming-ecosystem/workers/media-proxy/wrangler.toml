@@ -5,4 +5,6 @@ compatibility_date = "2026-08-12"
 [vars]
 API_BASE_URL = "https://lumenstream-api.onrender.com"
 STREAM_SIGN_SECRET = "7137765914fd7776ced46cf1147fb16a533c0073774e7f6f8ef4d76f8bdb8ce3"
-REQUIRE_SIGNATURE = "true"
+# Set both keys for compatibility — Worker checks REQUIRE_SIGNED || REQUIRE_SIGNATURE
+REQUIRE_SIGNED = "false"
+REQUIRE_SIGNATURE = "false"

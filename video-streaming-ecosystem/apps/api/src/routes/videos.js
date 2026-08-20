@@ -365,8 +365,13 @@ const handleUuidLookup = async (req, res) => {
   try {
     const uuid = req.params.uuid || req.params.identifier;
     const uuidKey = `video_uuid_${uuid}`;
-    const cached = await getCache(uuidKey);
-    if (cached) return res.json(cached);
+
+    // Skip cache if caller (Worker) sends Cache-Control: no-cache — ensures fresh stream links
+    const bypassCache = (req.headers['cache-control'] || '').includes('no-cache');
+    if (!bypassCache) {
+      const cached = await getCache(uuidKey);
+      if (cached) return res.json(cached);
+    }
 
     const video = await prisma.video.findFirst({
       where: {
@@ -421,4 +426,115 @@ router.post('/:uuid/refresh', async (req, res) => {
   }
 });
 
+// ─── Render-side Stream Proxy ────────────────────────────────────────────────
+// xHamster embeds the scraper's IP (Render) in the token: /data=74.220.52.6-dvp/
+// Cloudflare Worker (different IP) always gets 403 on these links.
+// Solution: Worker detects IP-locked links → calls this endpoint → Render (correct IP) proxies the bytes.
+
+function proxyHeadersFor(link) {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  try {
+    const u = new URL(link);
+    const host = u.hostname.toLowerCase();
+    if (host.includes('xhcdn') || host.includes('xhamster') || host.includes('newxh') || host.includes('xhvid')) {
+      return { 'User-Agent': ua, 'Referer': 'https://xhamster.com/', 'Origin': 'https://xhamster.com', 'Accept': '*/*' };
+    }
+    return { 'User-Agent': ua, 'Referer': `${u.origin}/`, 'Origin': u.origin, 'Accept': '*/*' };
+  } catch {
+    return { 'User-Agent': ua, 'Accept': '*/*' };
+  }
+}
+
+function collectLinks(v) {
+  const links = [];
+  for (const field of [v.directVideoLinks, v.m3u8Links]) {
+    if (!field) continue;
+    let list = field;
+    if (typeof list === 'string') { try { list = JSON.parse(list); } catch { list = [list]; } }
+    if (Array.isArray(list)) {
+      for (const item of list) {
+        if (typeof item === 'string' && item.trim()) links.push(item.trim());
+        else if (item && typeof item === 'object' && item.url) links.push(item.url);
+      }
+    } else if (typeof list === 'string' && list.trim()) {
+      links.push(list.trim());
+    }
+  }
+  return [...new Set(links)];
+}
+
+// GET /api/videos/:uuid/stream-proxy?range=bytes=0-
+router.get('/:uuid/stream-proxy', async (req, res) => {
+  try {
+    const { uuid } = req.params;
+
+    let video = await prisma.video.findFirst({ where: { OR: [{ uuid }, { slug: uuid }] } });
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+    if (video.status === 'dead') return res.status(410).json({ error: 'Stream unavailable' });
+
+    let links = collectLinks(video);
+
+    // If no links, or all links seem expired/IP-locked, trigger a refresh first
+    const allExpired = links.every((l) => {
+      const m = l.match(/[?&,]end=(\d+)/);
+      if (!m) return false;
+      return Number(m[1]) < Math.floor(Date.now() / 1000);
+    });
+
+    if (links.length === 0 || allExpired) {
+      try {
+        const refreshed = await singleflightRefresh(uuid, video.sourcePageUrl);
+        if (refreshed) {
+          video = refreshed;
+          links = collectLinks(refreshed);
+        }
+      } catch {}
+    }
+
+    if (links.length === 0) {
+      return res.status(404).json({ error: 'No stream links available — try re-scraping this video' });
+    }
+
+    const rangeHeader = req.headers['range'] || req.query.range;
+
+    let upstream = null;
+    let workingLink = '';
+    for (const link of links) {
+      try {
+        const headers = { ...proxyHeadersFor(link) };
+        if (rangeHeader) headers['Range'] = rangeHeader;
+        const r = await fetch(link, { headers, redirect: 'follow' });
+        if (r.ok || r.status === 206) { upstream = r; workingLink = link; break; }
+      } catch {}
+    }
+
+    if (!upstream) {
+      return res.status(502).json({
+        error: 'Upstream fetch failed — all stream links returned errors',
+        debug: { linkCount: links.length, linksPreview: links.map((l) => l.slice(0, 80)) },
+      });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'video/mp4';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    if (upstream.headers.get('content-range')) res.setHeader('Content-Range', upstream.headers.get('content-range'));
+    if (upstream.headers.get('content-length')) res.setHeader('Content-Length', upstream.headers.get('content-length'));
+
+    res.status(upstream.status);
+
+    // Pipe stream bytes — use Node.js Readable from fetch body
+    const { Readable } = await import('stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+
+  } catch (err) {
+    console.error('[stream-proxy error]', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
+

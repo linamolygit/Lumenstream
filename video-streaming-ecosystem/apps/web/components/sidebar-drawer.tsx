@@ -20,6 +20,7 @@ import {
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { BrandLogo } from "./brand-logo";
 import { cn } from "@/lib/utils";
 
 interface SidebarDrawerProps {
@@ -60,18 +61,9 @@ export function SidebarDrawer({ open, onClose }: SidebarDrawerProps) {
             <div className="space-y-6">
               {/* Header: Logo + Brand Name + Close X Button */}
               <div className="flex items-center justify-between">
-                <Link href="/" onClick={onClose} className="flex items-center gap-2.5">
-                  <Image
-                    src="/logo-square.png"
-                    alt="Lumenstream"
-                    width={32}
-                    height={32}
-                    className="h-8 w-8 object-contain rounded-xl"
-                  />
-                  <span className="text-lg font-black tracking-tight text-neutral-900 dark:text-white">
-                    Lumenstream
-                  </span>
-                </Link>
+                <div onClick={onClose}>
+                  <BrandLogo />
+                </div>
                 <button
                   onClick={onClose}
                   className="flex h-9 w-9 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"

@@ -12,6 +12,15 @@ env/
 .env.test.local
 .env.production.local
 *.env
+*serviceAccountKey*.json
+*.pem
+
+# Large binary UI design files (keep out of git — too slow to push)
+UI Design/Reference UI/*.png
+UI Design/Reference UI/*.jpg
+UI Design/*.png
+UI Design/*.jpg
+UI Design/*.txt
 
 # Build outputs & caches
 dist/

@@ -1,5 +1,6 @@
-// In-Memory & Redis-Ready Speed Cache Layer for Ultra-Fast API Responses (<1ms)
+// Ultra-Fast High-Throughput In-Memory Speed Cache Layer (<1ms) with Crash Guarantee
 const memoryCache = new Map();
+const MAX_CACHE_ITEMS = 5000;
 
 export async function getCache(key) {
   try {
@@ -17,22 +18,27 @@ export async function getCache(key) {
 
 export async function setCache(key, value, ttlSeconds = 300) {
   try {
+    if (!key) return;
     memoryCache.set(key, {
       value,
-      expiresAt: Date.now() + ttlSeconds * 1000,
+      expiresAt: Date.now() + Math.max(1, ttlSeconds) * 1000,
     });
 
-    // Prune oldest items if cache grows large
-    if (memoryCache.size > 1000) {
-      const firstKey = memoryCache.keys().next().value;
-      if (firstKey) memoryCache.delete(firstKey);
+    // Prune oldest items if cache size exceeds limit
+    if (memoryCache.size > MAX_CACHE_ITEMS) {
+      const iterator = memoryCache.keys();
+      for (let i = 0; i < 500; i++) {
+        const nextKey = iterator.next().value;
+        if (nextKey) memoryCache.delete(nextKey);
+        else break;
+      }
     }
   } catch {}
 }
 
 export async function delCache(key) {
   try {
-    memoryCache.delete(key);
+    if (key) memoryCache.delete(key);
   } catch {}
 }
 
@@ -48,4 +54,11 @@ export async function clearCache(pattern) {
       }
     }
   } catch {}
+}
+
+export function getCacheStats() {
+  return {
+    size: memoryCache.size,
+    maxSize: MAX_CACHE_ITEMS,
+  };
 }

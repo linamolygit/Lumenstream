@@ -23,6 +23,8 @@ type AuthContextValue = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  loginWithFirebase: (idToken: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateProfile: (name: string) => Promise<User>;
@@ -98,6 +100,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [api]
   );
 
+  const loginWithFirebase = useCallback(
+    async (idToken: string) => {
+      const res = await fetch(`${api}/api/auth/firebase`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Firebase authentication failed");
+      persist(data.token, data.user);
+      router.push(data.user.role === "admin" ? "/admin" : "/user/dashboard");
+    },
+    [api, router]
+  );
+
+  const loginWithGoogle = useCallback(async () => {
+    const { signInWithPopup } = await import("firebase/auth");
+    const { auth, googleProvider } = await import("@/lib/firebase-client");
+    const cred = await signInWithPopup(auth, googleProvider);
+    const idToken = await cred.user.getIdToken();
+    await loginWithFirebase(idToken);
+  }, [loginWithFirebase]);
+
   const logout = useCallback(() => {
     clear();
     router.push("/sign-in");
@@ -144,11 +169,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       login,
       register,
+      loginWithFirebase,
+      loginWithGoogle,
       logout,
       refreshUser,
       updateProfile,
     }),
-    [user, token, loading, login, register, logout, refreshUser, updateProfile]
+    [user, token, loading, login, register, loginWithFirebase, loginWithGoogle, logout, refreshUser, updateProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

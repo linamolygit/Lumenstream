@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
+import { BrandLogo } from "@/components/brand-logo";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard as OverviewIcon,
@@ -125,12 +126,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             {mobileOpen ? <CloseIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
-          <Link href="/admin" className="flex items-center gap-2.5">
-            <Image src="/icon.png" alt="Logo" width={28} height={28} className="rounded-lg" />
-            <span className="text-base font-black tracking-tight text-white">
-              LUMENSTREAM <span className="rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>
+          <div className="flex items-center gap-2">
+            <BrandLogo size="sm" />
+            <span className="rounded-lg bg-violet-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm">
+              ADMIN
             </span>
-          </Link>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
