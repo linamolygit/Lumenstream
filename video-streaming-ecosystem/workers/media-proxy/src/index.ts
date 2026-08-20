@@ -13,14 +13,30 @@ function corsHeaders() {
   };
 }
 
-function originHeadersFor(link: string): Record<string, string> {
-  const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+/**
+ * Universal Origin Header Engine:
+ * Generates appropriate headers based on link domain & mode to prevent 401/403 blocks across any site.
+ */
+function originHeadersFor(
+  link: string,
+  mode: "smart" | "clean" | "origin" | "source" = "smart",
+  sourcePageUrl?: string
+): Record<string, string> {
+  const ua =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
   try {
     const u = new URL(link);
     const host = u.hostname.toLowerCase();
 
-    // Sex303 / files4host / direct MP4: ONLY minimal headers with matching origin
-    if (host.includes("files4host") || host.includes("sex303") || link.endsWith(".mp4") || link.includes(".mp4?")) {
+    if (mode === "clean") {
+      // Minimal headers for direct MP4 CDNs (files4host, sex303, S3, storage CDNs)
+      return {
+        "User-Agent": ua,
+        "Accept": "*/*",
+      };
+    }
+
+    if (mode === "origin") {
       return {
         "User-Agent": ua,
         "Accept": "*/*",
@@ -29,8 +45,20 @@ function originHeadersFor(link: string): Record<string, string> {
       };
     }
 
-    // xHamster / xh domains: xHamster origin headers
-    if (host.includes("xhamster") || host.includes("newxh") || host.includes("xhcdn")) {
+    if (mode === "source" && sourcePageUrl) {
+      try {
+        const su = new URL(sourcePageUrl);
+        return {
+          "User-Agent": ua,
+          "Accept": "*/*",
+          "Referer": sourcePageUrl,
+          "Origin": su.origin,
+        };
+      } catch {}
+    }
+
+    // mode === "smart" (Canonical tube CDN matching):
+    if (host.includes("xhcdn") || host.includes("xhamster") || host.includes("newxh") || host.includes("xhvid")) {
       return {
         "User-Agent": ua,
         "Referer": "https://xhamster.com/",
@@ -38,13 +66,68 @@ function originHeadersFor(link: string): Record<string, string> {
         "Accept": "*/*",
       };
     }
+    if (host.includes("phncdn") || host.includes("pornhub")) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://www.pornhub.com/",
+        "Origin": "https://www.pornhub.com",
+        "Accept": "*/*",
+      };
+    }
+    if (host.includes("xvideos") || host.includes("xv-cdn") || host.includes("xvideos-cdn")) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://www.xvideos.com/",
+        "Origin": "https://www.xvideos.com",
+        "Accept": "*/*",
+      };
+    }
+    if (host.includes("spankbang") || host.includes("sb-cd")) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://spankbang.com/",
+        "Origin": "https://spankbang.com",
+        "Accept": "*/*",
+      };
+    }
+    if (host.includes("redgifs")) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://www.redgifs.com/",
+        "Origin": "https://www.redgifs.com",
+        "Accept": "*/*",
+      };
+    }
+    if (host.includes("eporner")) {
+      return {
+        "User-Agent": ua,
+        "Referer": "https://www.eporner.com/",
+        "Origin": "https://www.eporner.com",
+        "Accept": "*/*",
+      };
+    }
 
-    // Default fallback for generic media hosts
+    // Direct media files & storage hosts (.mp4, files4host, sex303, storage, b-cdn, r2, s3)
+    if (
+      host.includes("files4host") ||
+      host.includes("sex303") ||
+      host.includes("storage") ||
+      host.includes("b-cdn") ||
+      host.includes("r2.dev") ||
+      link.includes(".mp4")
+    ) {
+      return {
+        "User-Agent": ua,
+        "Accept": "*/*",
+      };
+    }
+
+    // Default generic fallback
     return {
       "User-Agent": ua,
+      "Accept": "*/*",
       "Referer": `${u.origin}/`,
       "Origin": u.origin,
-      "Accept": "*/*",
     };
   } catch {
     return {
@@ -52,6 +135,42 @@ function originHeadersFor(link: string): Record<string, string> {
       "Accept": "*/*",
     };
   }
+}
+
+async function fetchUpstreamWithFallback(
+  link: string,
+  reqRange: string | null,
+  sourcePageUrl?: string
+): Promise<{ res: Response | null; statusMap: Record<string, number> }> {
+  const modes: Array<"smart" | "clean" | "origin" | "source"> = ["smart", "clean", "origin"];
+  if (sourcePageUrl) modes.push("source");
+
+  const statusMap: Record<string, number> = {};
+
+  for (const mode of modes) {
+    try {
+      const headers: Record<string, string> = {
+        ...originHeadersFor(link, mode, sourcePageUrl),
+        ...(reqRange ? { Range: reqRange } : {}),
+      };
+
+      const res = await fetch(link, { headers, redirect: "follow" });
+      statusMap[`${link.slice(0, 70)} [${mode}]`] = res.status;
+
+      if (res.ok || res.status === 206) {
+        return { res, statusMap };
+      }
+    } catch {
+      statusMap[`${link.slice(0, 70)} [${mode}]`] = -1;
+    }
+  }
+
+  return { res: null, statusMap };
+}
+
+// Detect tokens with IP bindings: /data=IP.ADDRESS-dvp/
+function isIpLocked(link: string): boolean {
+  return /\/data=[\d.]+-dvp\//.test(link);
 }
 
 async function hmacHex(secret: string, message: string): Promise<string> {
@@ -108,14 +227,13 @@ function resolveUrl(relativeOrAbsolute: string, baseUrl: string): string {
   }
 }
 
-// Detect xHamster IP-locked tokens: contain /data=IP.ADDRESS-dvp/ in path.
-// These links ONLY work from the IP that scraped them (Render's IP).
-// Cloudflare Worker (always a different edge IP) will get 403 on these.
-function isIpLocked(link: string): boolean {
-  return /\/data=[\d.]+-dvp\//.test(link);
-}
-
-function rewriteM3u8(body: string, workerOrigin: string, uuid: string, search: string, playlistBaseUrl: string): string {
+function rewriteM3u8(
+  body: string,
+  workerOrigin: string,
+  uuid: string,
+  search: string,
+  playlistBaseUrl: string
+): string {
   const q = search.startsWith("?") ? search : search ? `?${search}` : "";
   return body
     .split("\n")
@@ -179,13 +297,13 @@ export default {
         });
       }
 
-      // Fetch video metadata from API — bypass cache with no-cache header so stale stream data isn't served
+      // Fetch video metadata from API — bypass cache with no-cache header
       let metaRes = await fetch(`${apiBase}/api/videos/uuid/${uuid}`, {
-        headers: { 'Cache-Control': 'no-cache' },
+        headers: { "Cache-Control": "no-cache" },
       });
       if (!metaRes.ok) {
         metaRes = await fetch(`${apiBase}/api/videos/${uuid}`, {
-          headers: { 'Cache-Control': 'no-cache' },
+          headers: { "Cache-Control": "no-cache" },
         });
       }
 
@@ -205,8 +323,8 @@ export default {
         });
       }
 
-      // Collect candidate links with multi-casing support (m3u8Links, m3u8_links, directVideoLinks, direct_video_links, videoUrl, video_url)
       const collectCandidateLinks = (vData: any): string[] => {
+        if (!vData) return [];
         const links: string[] = [];
         const fields = [
           vData.m3u8Links,
@@ -221,7 +339,11 @@ export default {
           if (!field) continue;
           let list = field;
           if (typeof list === "string") {
-            try { list = JSON.parse(list); } catch { list = [list]; }
+            try {
+              list = JSON.parse(list);
+            } catch {
+              list = [list];
+            }
           }
           if (Array.isArray(list)) {
             for (const item of list) {
@@ -238,74 +360,72 @@ export default {
       let candidateLinks = collectCandidateLinks(video);
       const reqRange = request.headers.get("Range");
 
-      // Try fetching candidate stream links using dynamic per-link origin headers
       let upstreamRes: Response | null = null;
       let workingLink = "";
-      const failedLinkStatuses: Record<string, number> = {};
+      const failedStatuses: Record<string, number> = {};
+
+      // 1. Try direct fetch for each candidate link with multi-header fallback
       for (const link of candidateLinks) {
-        try {
-          const headers = {
-            ...originHeadersFor(link),
-            ...(reqRange ? { Range: reqRange } : {}),
-          };
-          // redirect: 'follow' ensures CDN 302→MP4 redirects are handled
-          const res = await fetch(link, { headers, redirect: 'follow' });
-          if (res.ok || res.status === 206) {
-            upstreamRes = res;
-            workingLink = link;
-            break;
-          } else {
-            failedLinkStatuses[link.slice(0, 80)] = res.status;
-          }
-        } catch (e: any) {
-          failedLinkStatuses[link.slice(0, 80)] = -1; // network error
+        const { res, statusMap } = await fetchUpstreamWithFallback(link, reqRange, video.sourcePageUrl);
+        Object.assign(failedStatuses, statusMap);
+        if (res) {
+          upstreamRes = res;
+          workingLink = link;
+          break;
         }
       }
 
-      // If candidate links failed (expired tokens or empty links), trigger auto-refresh from API
+      // 2. If candidate links failed (expired token or empty links), trigger auto-refresh from API
       if (!upstreamRes) {
         try {
           const refreshRes = await fetch(`${apiBase}/api/videos/${uuid}/refresh`, {
             method: "POST",
+            headers: { "Cache-Control": "no-cache" },
           });
           if (refreshRes.ok) {
             const refreshedVideo = await refreshRes.json();
             const newLinks = collectCandidateLinks(refreshedVideo);
             for (const link of newLinks) {
-              try {
-                const headers = {
-                  ...originHeadersFor(link),
-                  ...(reqRange ? { Range: reqRange } : {}),
-                };
-                const res = await fetch(link, { headers, redirect: 'follow' });
-                if (res.ok || res.status === 206) {
-                  upstreamRes = res;
-                  workingLink = link;
-                  break;
-                } else {
-                  failedLinkStatuses[link.slice(0, 80)] = res.status;
-                }
-              } catch {}
+              const { res, statusMap } = await fetchUpstreamWithFallback(
+                link,
+                reqRange,
+                refreshedVideo.sourcePageUrl || video.sourcePageUrl
+              );
+              Object.assign(failedStatuses, statusMap);
+              if (res) {
+                upstreamRes = res;
+                workingLink = link;
+                break;
+              }
             }
           }
         } catch {}
       }
 
+      // 3. Universal Render IP Proxy Fallback:
+      // If direct Cloudflare edge fetch failed for ANY reason (IP-locked tokens, CDN blocking CF IPs, etc.)
       if (!upstreamRes) {
-        // Final fallback: if any candidate links are IP-locked (xHamster tokens),
-        // route through Render stream-proxy which has the correct IP
-        const hasIpLockedLinks = candidateLinks.some(isIpLocked);
-        if (hasIpLockedLinks) {
-          const proxyUrl = `${apiBase}/api/videos/${uuid}/stream-proxy`;
+        const proxyUrls = [
+          `${apiBase}/api/videos/${uuid}/stream-proxy`,
+          `${apiBase}/api/videos/proxy-stream?uuid=${uuid}`,
+        ];
+
+        for (const proxyUrl of proxyUrls) {
           try {
-            const proxyHeaders: Record<string, string> = {};
-            if (reqRange) proxyHeaders['Range'] = reqRange;
-            const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders, redirect: 'follow' });
+            const proxyHeaders: Record<string, string> = { "Cache-Control": "no-cache" };
+            if (reqRange) proxyHeaders["Range"] = reqRange;
+
+            const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders, redirect: "follow" });
             if (proxyRes.ok || proxyRes.status === 206) {
               upstreamRes = proxyRes;
               workingLink = proxyUrl;
+              break;
+            } else {
+              failedStatuses[`[RenderProxy] ${proxyUrl}`] = proxyRes.status;
             }
-          } catch {}
+          } catch (e: any) {
+            failedStatuses[`[RenderProxy] ${proxyUrl}`] = -1;
+          }
         }
       }
 
@@ -322,7 +442,7 @@ export default {
               hasMp4: !!(video?.directVideoLinks || video?.direct_video_links),
               m3u8LinksRaw: video?.m3u8Links ?? null,
               directVideoLinksRaw: video?.directVideoLinks ?? null,
-              failedStatuses: failedLinkStatuses,
+              failedStatuses,
             },
           }),
           {
@@ -351,7 +471,7 @@ export default {
           },
         });
       } else {
-        // Direct MP4 video stream pipe with Range & Partial Content support
+        // Direct MP4 / binary video stream pipe with Range & Partial Content support
         const headers = new Headers(corsHeaders());
         headers.set("Content-Type", contentType || "video/mp4");
         headers.set("Accept-Ranges", "bytes");
@@ -385,11 +505,14 @@ export default {
       }
 
       let keyUrl = target;
-      try { keyUrl = decodeURIComponent(target); } catch {}
+      try {
+        keyUrl = decodeURIComponent(target);
+      } catch {}
 
-      const upstream = await fetch(keyUrl, {
-        headers: originHeadersFor(keyUrl),
-      });
+      const { res: upstream } = await fetchUpstreamWithFallback(keyUrl, null);
+      if (!upstream) {
+        return new Response("Key fetch failed", { status: 502, headers: corsHeaders() });
+      }
 
       const headers = new Headers(corsHeaders());
       headers.set("Content-Type", upstream.headers.get("Content-Type") || "application/octet-stream");
@@ -422,12 +545,11 @@ export default {
       } catch {}
 
       const reqRange = request.headers.get("Range");
-      const headers = {
-        ...originHeadersFor(segmentUrl),
-        ...(reqRange ? { Range: reqRange } : {}),
-      };
+      const { res: upstream } = await fetchUpstreamWithFallback(segmentUrl, reqRange);
 
-      const upstream = await fetch(segmentUrl, { headers });
+      if (!upstream) {
+        return new Response("Segment fetch failed", { status: 502, headers: corsHeaders() });
+      }
 
       const resHeaders = new Headers(corsHeaders());
       resHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "video/mp2t");

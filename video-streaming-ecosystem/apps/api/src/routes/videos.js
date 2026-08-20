@@ -146,92 +146,10 @@ const handlePlay = async (req, res) => {
 router.get('/play/:identifier', handlePlay);
 router.get('/:identifier/play', handlePlay);
 
-// GET /api/videos/proxy-stream?uuid=... (Render IP Media Proxy for IP-locked xHamster streams)
-router.get('/proxy-stream', async (req, res) => {
-  try {
-    const { uuid } = req.query;
-    if (!uuid) return res.status(400).json({ error: 'uuid required' });
-
-    const video = await prisma.video.findUnique({ where: { uuid: String(uuid) } });
-    if (!video || video.status === 'dead') {
-      return res.status(404).json({ error: 'Stream unavailable' });
-    }
-
-    const collectLinks = (v) => {
-      const links = [];
-      const fields = [v.m3u8Links, v.directVideoLinks];
-      for (const field of fields) {
-        if (!field) continue;
-        let list = field;
-        if (typeof list === 'string') {
-          try { list = JSON.parse(list); } catch { list = [list]; }
-        }
-        if (Array.isArray(list)) {
-          for (const item of list) {
-            if (typeof item === 'string' && item.trim()) links.push(item.trim());
-            else if (item && item.url) links.push(item.url);
-          }
-        }
-      }
-      return [...new Set(links)];
-    };
-
-    const candidateLinks = collectLinks(video);
-    if (!candidateLinks.length) {
-      return res.status(404).json({ error: 'No stream links found' });
-    }
-
-    const range = req.headers.range;
-    let upstreamRes = null;
-
-    for (const link of candidateLinks) {
-      try {
-        const u = new URL(link);
-        const isXh = u.hostname.includes('xhamster') || u.hostname.includes('xhcdn');
-        const headers = {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': '*/*',
-          ...(isXh ? { 'Referer': 'https://xhamster.com/', 'Origin': 'https://xhamster.com' } : { 'Referer': `${u.origin}/` }),
-          ...(range ? { Range: range } : {}),
-        };
-
-        const response = await fetch(link, { headers });
-        if (response.ok || response.status === 206) {
-          upstreamRes = response;
-          break;
-        }
-      } catch {}
-    }
-
-    if (!upstreamRes) {
-      return res.status(502).json({ error: 'Upstream stream connection failed' });
-    }
-
-    const contentType = upstreamRes.headers.get('Content-Type') || 'video/mp4';
-    res.status(upstreamRes.status);
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (upstreamRes.headers.get('Accept-Ranges')) res.setHeader('Accept-Ranges', upstreamRes.headers.get('Accept-Ranges'));
-    if (upstreamRes.headers.get('Content-Range')) res.setHeader('Content-Range', upstreamRes.headers.get('Content-Range'));
-    if (upstreamRes.headers.get('Content-Length')) res.setHeader('Content-Length', upstreamRes.headers.get('Content-Length'));
-
-    const nodeStream = upstreamRes.body;
-    if (nodeStream && typeof nodeStream.pipe === 'function') {
-      nodeStream.pipe(res);
-    } else if (nodeStream) {
-      const reader = nodeStream.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-      res.end();
-    } else {
-      res.end();
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// GET /api/videos/proxy-stream?uuid=... (Render IP Media Proxy for IP-locked streams)
+router.get('/proxy-stream', async (req, res, next) => {
+  req.params.uuid = req.query.uuid;
+  return handleStreamProxy(req, res, next);
 });
 
 // GET /api/videos?limit=24&sort=latest|trending|featured&q=...
@@ -427,18 +345,53 @@ router.post('/:uuid/refresh', async (req, res) => {
 });
 
 // ─── Render-side Stream Proxy ────────────────────────────────────────────────
-// xHamster embeds the scraper's IP (Render) in the token: /data=74.220.52.6-dvp/
-// Cloudflare Worker (different IP) always gets 403 on these links.
-// Solution: Worker detects IP-locked links → calls this endpoint → Render (correct IP) proxies the bytes.
-
-function proxyHeadersFor(link) {
+// Acts as a universal server-side stream pipe for any media host, handling IP-locking and CORS
+function proxyHeadersFor(link, mode = 'smart', sourcePageUrl) {
   const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   try {
     const u = new URL(link);
     const host = u.hostname.toLowerCase();
+
+    if (mode === 'clean') {
+      return { 'User-Agent': ua, 'Accept': '*/*' };
+    }
+
+    if (mode === 'origin') {
+      return { 'User-Agent': ua, 'Accept': '*/*', 'Referer': `${u.origin}/`, 'Origin': u.origin };
+    }
+
+    if (mode === 'source' && sourcePageUrl) {
+      try {
+        const su = new URL(sourcePageUrl);
+        return { 'User-Agent': ua, 'Accept': '*/*', 'Referer': sourcePageUrl, 'Origin': su.origin };
+      } catch {}
+    }
+
+    // mode === 'smart' (Canonical tube matching)
     if (host.includes('xhcdn') || host.includes('xhamster') || host.includes('newxh') || host.includes('xhvid')) {
       return { 'User-Agent': ua, 'Referer': 'https://xhamster.com/', 'Origin': 'https://xhamster.com', 'Accept': '*/*' };
     }
+    if (host.includes('phncdn') || host.includes('pornhub')) {
+      return { 'User-Agent': ua, 'Referer': 'https://www.pornhub.com/', 'Origin': 'https://www.pornhub.com', 'Accept': '*/*' };
+    }
+    if (host.includes('xvideos') || host.includes('xv-cdn') || host.includes('xvideos-cdn')) {
+      return { 'User-Agent': ua, 'Referer': 'https://www.xvideos.com/', 'Origin': 'https://www.xvideos.com', 'Accept': '*/*' };
+    }
+    if (host.includes('spankbang') || host.includes('sb-cd')) {
+      return { 'User-Agent': ua, 'Referer': 'https://spankbang.com/', 'Origin': 'https://spankbang.com', 'Accept': '*/*' };
+    }
+    if (host.includes('redgifs')) {
+      return { 'User-Agent': ua, 'Referer': 'https://www.redgifs.com/', 'Origin': 'https://www.redgifs.com', 'Accept': '*/*' };
+    }
+    if (host.includes('eporner')) {
+      return { 'User-Agent': ua, 'Referer': 'https://www.eporner.com/', 'Origin': 'https://www.eporner.com', 'Accept': '*/*' };
+    }
+
+    // Direct MP4 / generic CDN storage hosts
+    if (host.includes('files4host') || host.includes('sex303') || host.includes('storage') || host.includes('b-cdn') || link.includes('.mp4')) {
+      return { 'User-Agent': ua, 'Accept': '*/*' };
+    }
+
     return { 'User-Agent': ua, 'Referer': `${u.origin}/`, 'Origin': u.origin, 'Accept': '*/*' };
   } catch {
     return { 'User-Agent': ua, 'Accept': '*/*' };
@@ -447,7 +400,7 @@ function proxyHeadersFor(link) {
 
 function collectLinks(v) {
   const links = [];
-  for (const field of [v.directVideoLinks, v.m3u8Links]) {
+  for (const field of [v.directVideoLinks, v.m3u8Links, v.videoUrl]) {
     if (!field) continue;
     let list = field;
     if (typeof list === 'string') { try { list = JSON.parse(list); } catch { list = [list]; } }
@@ -463,10 +416,10 @@ function collectLinks(v) {
   return [...new Set(links)];
 }
 
-// GET /api/videos/:uuid/stream-proxy?range=bytes=0-
-router.get('/:uuid/stream-proxy', async (req, res) => {
+const handleStreamProxy = async (req, res) => {
   try {
-    const { uuid } = req.params;
+    const uuid = req.params.uuid || req.query.uuid;
+    if (!uuid) return res.status(400).json({ error: 'uuid required' });
 
     let video = await prisma.video.findFirst({ where: { OR: [{ uuid }, { slug: uuid }] } });
     if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -499,13 +452,22 @@ router.get('/:uuid/stream-proxy', async (req, res) => {
 
     let upstream = null;
     let workingLink = '';
+    const modes = ['smart', 'clean', 'origin', 'source'];
+
     for (const link of links) {
-      try {
-        const headers = { ...proxyHeadersFor(link) };
-        if (rangeHeader) headers['Range'] = rangeHeader;
-        const r = await fetch(link, { headers, redirect: 'follow' });
-        if (r.ok || r.status === 206) { upstream = r; workingLink = link; break; }
-      } catch {}
+      for (const mode of modes) {
+        try {
+          const headers = { ...proxyHeadersFor(link, mode, video.sourcePageUrl) };
+          if (rangeHeader) headers['Range'] = rangeHeader;
+          const r = await fetch(link, { headers, redirect: 'follow' });
+          if (r.ok || r.status === 206) {
+            upstream = r;
+            workingLink = link;
+            break;
+          }
+        } catch {}
+      }
+      if (upstream) break;
     }
 
     if (!upstream) {
@@ -526,15 +488,21 @@ router.get('/:uuid/stream-proxy', async (req, res) => {
 
     res.status(upstream.status);
 
-    // Pipe stream bytes — use Node.js Readable from fetch body
+    // Pipe stream bytes
     const { Readable } = await import('stream');
-    Readable.fromWeb(upstream.body).pipe(res);
-
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+    } else {
+      res.end();
+    }
   } catch (err) {
     console.error('[stream-proxy error]', err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
-});
+};
+
+// GET /api/videos/:uuid/stream-proxy?range=bytes=0-
+router.get('/:uuid/stream-proxy', handleStreamProxy);
 
 export default router;
 
