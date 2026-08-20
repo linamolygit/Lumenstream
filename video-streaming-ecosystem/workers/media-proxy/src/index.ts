@@ -13,9 +13,30 @@ function corsHeaders() {
   };
 }
 
+// Known direct-MP4, blog CDN, and hotlinked video host list
+const directMp4Hosts = [
+  "files4host",
+  "upserv.xyz",
+  "mmsbee",
+  "server15",
+  "fsiblog",
+  "zproxy",
+  "xbaaz",
+  "desixxx",
+  "cdn-thumb",
+  "sex303",
+  "streamtape",
+  "doodstream",
+  "mixdrop",
+  "videobin",
+  "storage",
+  "b-cdn",
+  "r2.dev",
+];
+
 /**
  * Universal Origin Header Engine:
- * Generates appropriate headers based on link domain & mode to prevent 401/403 blocks across any site.
+ * Generates appropriate headers based on link domain, source page URL & mode to prevent 401/403 blocks across any site.
  */
 function originHeadersFor(
   link: string,
@@ -29,7 +50,7 @@ function originHeadersFor(
     const host = u.hostname.toLowerCase();
 
     if (mode === "clean") {
-      // Minimal headers for direct MP4 CDNs (files4host, sex303, S3, storage CDNs)
+      // Minimal bare headers for CDNs that reject foreign or non-empty Referers
       return {
         "User-Agent": ua,
         "Accept": "*/*",
@@ -57,8 +78,27 @@ function originHeadersFor(
       } catch {}
     }
 
-    // mode === "smart" (Canonical tube CDN matching):
-    if (host.includes("xhcdn") || host.includes("xhamster") || host.includes("newxh") || host.includes("xhvid")) {
+    // mode === "smart":
+    // 1. Direct-MP4 / Blog CDNs / Desi tube CDNs (files4host, upserv, mmsbee, fsiblog, xbaaz, desixxx, etc.)
+    if (directMp4Hosts.some((h) => host.includes(h)) || link.includes(".mp4")) {
+      const ref = sourcePageUrl || `https://${host}/`;
+      return {
+        "User-Agent": ua,
+        "Accept": "*/*",
+        "Referer": ref,
+        "Origin": `https://${host}`,
+      };
+    }
+
+    // 2. Canonical Tube CDN families:
+    if (
+      host.includes("xhcdn") ||
+      host.includes("xhamster") ||
+      host.includes("newxh") ||
+      host.includes("xhvid") ||
+      host.includes("xhchannel") ||
+      host.includes("xhpingcdn")
+    ) {
       return {
         "User-Agent": ua,
         "Referer": "https://xhamster.com/",
@@ -66,6 +106,7 @@ function originHeadersFor(
         "Accept": "*/*",
       };
     }
+
     if (host.includes("phncdn") || host.includes("pornhub")) {
       return {
         "User-Agent": ua,
@@ -74,6 +115,7 @@ function originHeadersFor(
         "Accept": "*/*",
       };
     }
+
     if (host.includes("xvideos") || host.includes("xv-cdn") || host.includes("xvideos-cdn")) {
       return {
         "User-Agent": ua,
@@ -82,6 +124,7 @@ function originHeadersFor(
         "Accept": "*/*",
       };
     }
+
     if (host.includes("spankbang") || host.includes("sb-cd")) {
       return {
         "User-Agent": ua,
@@ -90,6 +133,7 @@ function originHeadersFor(
         "Accept": "*/*",
       };
     }
+
     if (host.includes("redgifs")) {
       return {
         "User-Agent": ua,
@@ -98,6 +142,7 @@ function originHeadersFor(
         "Accept": "*/*",
       };
     }
+
     if (host.includes("eporner")) {
       return {
         "User-Agent": ua,
@@ -107,27 +152,13 @@ function originHeadersFor(
       };
     }
 
-    // Direct media files & storage hosts (.mp4, files4host, sex303, storage, b-cdn, r2, s3)
-    if (
-      host.includes("files4host") ||
-      host.includes("sex303") ||
-      host.includes("storage") ||
-      host.includes("b-cdn") ||
-      host.includes("r2.dev") ||
-      link.includes(".mp4")
-    ) {
-      return {
-        "User-Agent": ua,
-        "Accept": "*/*",
-      };
-    }
-
-    // Default generic fallback
+    // Default fallback: use sourcePageUrl if available or same-origin style
+    const origin = `https://${host}`;
     return {
       "User-Agent": ua,
       "Accept": "*/*",
-      "Referer": `${u.origin}/`,
-      "Origin": u.origin,
+      "Referer": sourcePageUrl || `${origin}/`,
+      "Origin": origin,
     };
   } catch {
     return {
@@ -265,6 +296,58 @@ function rewriteM3u8(
     .join("\n");
 }
 
+/** Collect m3u8 + mp4 with smart priority scoring */
+function collectCandidateLinks(vData: any): string[] {
+  if (!vData) return [];
+  const links: string[] = [];
+  const fields = [
+    vData.m3u8Links,
+    vData.m3u8_links,
+    vData.directVideoLinks,
+    vData.direct_video_links,
+    vData.videoUrl,
+    vData.video_url,
+  ];
+
+  for (const field of fields) {
+    if (!field) continue;
+    let list = field;
+    if (typeof list === "string") {
+      const s = list.trim();
+      if (!s) continue;
+      try {
+        list = JSON.parse(s);
+      } catch {
+        list = [s];
+      }
+    }
+    if (Array.isArray(list)) {
+      for (const item of list) {
+        if (typeof item === "string" && item.trim()) links.push(item.trim());
+        else if (item && typeof item === "object" && item.url) links.push(String(item.url));
+      }
+    } else if (typeof list === "string" && list.trim()) {
+      links.push(list.trim());
+    }
+  }
+
+  // Priority Ranking: Direct MP4 (sex303/upserv/mmsbee/files4host) first -> Non-IP-locked m3u8 -> IP-locked last
+  const unique = [...new Set(links)];
+  unique.sort((a, b) => {
+    const score = (u: string) => {
+      let s = 0;
+      if (u.includes("data=") && /\d+\.\d+\.\d+\.\d+/.test(u)) s -= 100; // IP-locked last (handled via Render proxy)
+      if (directMp4Hosts.some((h) => u.toLowerCase().includes(h))) s += 60; // Known direct MP4 host boost
+      if (u.includes(".mp4") && !u.includes(".m3u8")) s += 50; // Direct MP4 priority
+      if (u.includes("master") || u.includes("multi=")) s += 30; // Master HLS playlist
+      if (u.includes(".m3u8")) s += 20; // HLS playlist
+      return s;
+    };
+    return score(b) - score(a);
+  });
+  return unique;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -315,6 +398,9 @@ export default {
       }
 
       let video = (await metaRes.json()) as any;
+      if (video?.data && (video.data.uuid || video.data.m3u8Links || video.data.directVideoLinks)) {
+        video = video.data;
+      }
 
       if (video.status === "dead") {
         return new Response(JSON.stringify({ error: "Stream unavailable" }), {
@@ -322,40 +408,6 @@ export default {
           headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
       }
-
-      const collectCandidateLinks = (vData: any): string[] => {
-        if (!vData) return [];
-        const links: string[] = [];
-        const fields = [
-          vData.m3u8Links,
-          vData.m3u8_links,
-          vData.directVideoLinks,
-          vData.direct_video_links,
-          vData.videoUrl,
-          vData.video_url,
-        ];
-
-        for (const field of fields) {
-          if (!field) continue;
-          let list = field;
-          if (typeof list === "string") {
-            try {
-              list = JSON.parse(list);
-            } catch {
-              list = [list];
-            }
-          }
-          if (Array.isArray(list)) {
-            for (const item of list) {
-              if (typeof item === "string" && item.trim()) links.push(item.trim());
-              else if (item && typeof item === "object" && item.url) links.push(item.url);
-            }
-          } else if (typeof list === "string" && list.trim()) {
-            links.push(list.trim());
-          }
-        }
-        return [...new Set(links)];
-      };
 
       let candidateLinks = collectCandidateLinks(video);
       const reqRange = request.headers.get("Range");
@@ -383,7 +435,8 @@ export default {
             headers: { "Cache-Control": "no-cache" },
           });
           if (refreshRes.ok) {
-            const refreshedVideo = await refreshRes.json();
+            let refreshedVideo = await refreshRes.json();
+            if (refreshedVideo?.data) refreshedVideo = refreshedVideo.data;
             const newLinks = collectCandidateLinks(refreshedVideo);
             for (const link of newLinks) {
               const { res, statusMap } = await fetchUpstreamWithFallback(

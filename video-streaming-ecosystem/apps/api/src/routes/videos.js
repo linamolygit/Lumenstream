@@ -86,6 +86,8 @@ function mapVideo(v, includeRawStreams = false) {
   if (includeRawStreams) {
     obj.m3u8Links = v.m3u8Links;
     obj.directVideoLinks = v.directVideoLinks;
+    obj.sourcePageUrl = v.sourcePageUrl;
+    obj.sourceSite = v.sourceSite;
   }
 
   return obj;
