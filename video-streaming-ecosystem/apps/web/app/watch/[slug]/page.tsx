@@ -307,46 +307,7 @@ export default function WatchPage() {
     }
   };
 
-  // Handle Secure Download
-  const handleDownload = async () => {
-    if (!video) return;
-    setDownloading(true);
-    try {
-      // Record download in localStorage
-      const existing = JSON.parse(localStorage.getItem("lumenstream_downloads") || "[]");
-      const updated = [
-        {
-          uuid: video.uuid,
-          title: video.title,
-          slug: video.slug,
-          thumbnail: video.thumbnail,
-          duration: video.duration,
-          channelName: video.channelName,
-          downloadedAt: new Date().toISOString(),
-          url: streamUrl,
-        },
-        ...existing.filter((item: any) => item.uuid !== video.uuid),
-      ];
-      localStorage.setItem("lumenstream_downloads", JSON.stringify(updated));
 
-      // Trigger download via Blob URL for max stream security
-      const res = await fetch(streamUrl);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = `${video.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      // Fallback: open stream URL in new tab safely
-      window.open(streamUrl, "_blank");
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   // Handle Comment Submission
   const handlePostComment = async (e: React.FormEvent) => {

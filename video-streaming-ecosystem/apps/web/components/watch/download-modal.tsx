@@ -167,7 +167,7 @@ export function DownloadModal({ isOpen, onClose, video, streamUrl }: DownloadMod
       setProgress(100);
 
       // Create Blob from downloaded chunks
-      const blob = new Blob(chunks, { type: "video/mp4" });
+      const blob = new Blob(chunks as any, { type: "video/mp4" });
       const blobUrl = URL.createObjectURL(blob);
 
       // Save to localStorage history
