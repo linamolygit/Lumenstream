@@ -20,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { YoutubePlayer } from "@/components/watch/youtube-player";
+import { DownloadModal } from "@/components/watch/download-modal";
 import { formatDuration, cn } from "@/lib/utils";
 import { formatViews } from "@/lib/format-views";
 import { ShareModal } from "@/components/share-modal";
@@ -166,7 +167,7 @@ export default function WatchPage() {
   const [saved, setSaved] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
 
   // Comments state
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -579,18 +580,13 @@ export default function WatchPage() {
                   <span>{saved ? "Saved" : "Save"}</span>
                 </button>
 
-                {/* Secure Download Button */}
+                {/* SaaS Download Modal Trigger Button */}
                 <button
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-neutral-300 transition-all duration-200 hover:bg-white hover:text-black active:scale-95 disabled:opacity-50 shadow-sm"
+                  onClick={() => setDownloadModalOpen(true)}
+                  className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-neutral-300 transition-all duration-200 hover:bg-white hover:text-black active:scale-95 shadow-sm"
                 >
-                  {downloading ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  <span>{downloading ? "Preparing..." : "Download"}</span>
+                  <Download className="h-4 w-4" />
+                  <span>Download</span>
                 </button>
               </div>
             </div>
@@ -710,6 +706,16 @@ export default function WatchPage() {
           onClose={() => setShareOpen(false)}
           title={video.title}
           url={typeof window !== "undefined" ? window.location.href : ""}
+        />
+      )}
+
+      {/* SaaS Download Modal with Quality Selection & Progress Bar */}
+      {video && (
+        <DownloadModal
+          isOpen={downloadModalOpen}
+          onClose={() => setDownloadModalOpen(false)}
+          video={video}
+          streamUrl={streamUrl}
         />
       )}
     </div>
