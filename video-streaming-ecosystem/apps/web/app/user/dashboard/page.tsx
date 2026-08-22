@@ -185,7 +185,7 @@ function SectionHeader({
 
 export default function UserDashboardPage() {
   const { user } = useAuth();
-  const { get } = useUserApi();
+  const { get, authReady } = useUserApi();
 
   const [data, setData] = useState<{
     continueWatching: VideoCard[];
@@ -210,8 +210,9 @@ export default function UserDashboardPage() {
   };
 
   useEffect(() => {
+    if (!authReady) return;
     fetchDashboard();
-  }, []);
+  }, [authReady]);
 
   if (loading) {
     return (

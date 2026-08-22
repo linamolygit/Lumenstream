@@ -26,7 +26,7 @@ function formatDuration(sec?: number) {
 import { formatViews } from "@/lib/format-views";
 
 export default function LikedPage() {
-  const { get, del } = useUserApi();
+  const { get, del, authReady } = useUserApi();
   const [items, setItems] = useState<LikedVideo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ export default function LikedPage() {
     }
   }, [get]);
 
-  useEffect(() => { fetchLiked(); }, [fetchLiked]);
+  useEffect(() => { if (authReady) fetchLiked(); }, [authReady, fetchLiked]);
 
   const unlike = async (uuid: string) => {
     setRemovingUuid(uuid);

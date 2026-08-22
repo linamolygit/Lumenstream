@@ -6,7 +6,8 @@ import { useCallback } from "react";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export function useUserApi() {
-  const { token, logout } = useAuth();
+  const { token, logout, loading: authLoading } = useAuth();
+  const authReady = !authLoading;
 
   const authHeaders = useCallback(
     () => ({
@@ -83,5 +84,5 @@ export function useUserApi() {
     [authHeaders, logout]
   );
 
-  return { get, post, del, patch };
+  return { get, post, del, patch, authReady };
 }

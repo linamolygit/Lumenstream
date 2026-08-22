@@ -53,7 +53,7 @@ function groupByDate(items: HistoryItem[]): Record<string, HistoryItem[]> {
 }
 
 export default function HistoryPage() {
-  const { get, del } = useUserApi();
+  const { get, del, authReady } = useUserApi();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -75,7 +75,7 @@ export default function HistoryPage() {
     }
   }, [get]);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => { if (authReady) fetchHistory(); }, [authReady, fetchHistory]);
 
   const removeItem = async (uuid: string) => {
     setRemovingUuid(uuid);

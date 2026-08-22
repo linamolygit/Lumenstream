@@ -32,7 +32,7 @@ function formatDuration(sec?: number) {
 import { formatViews } from "@/lib/format-views";
 
 export default function SavedPage() {
-  const { get, del } = useUserApi();
+  const { get, del, authReady } = useUserApi();
   const [items, setItems] = useState<SavedVideo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -54,7 +54,7 @@ export default function SavedPage() {
     }
   }, [get]);
 
-  useEffect(() => { fetchSaved(); }, [fetchSaved]);
+  useEffect(() => { if (authReady) fetchSaved(); }, [authReady, fetchSaved]);
 
   const removeItem = async (uuid: string) => {
     setRemovingUuid(uuid);

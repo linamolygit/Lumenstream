@@ -27,7 +27,7 @@ function formatDuration(sec?: number) {
 import { formatViews } from "@/lib/format-views";
 
 export default function RecommendedPage() {
-  const { get } = useUserApi();
+  const { get, authReady } = useUserApi();
   const [items, setItems] = useState<RecoVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export default function RecommendedPage() {
     }
   }, [get]);
 
-  useEffect(() => { fetchReco(); }, [fetchReco]);
+  useEffect(() => { if (authReady) fetchReco(); }, [authReady, fetchReco]);
 
   return (
     <div className="min-h-full p-4 md:p-6">

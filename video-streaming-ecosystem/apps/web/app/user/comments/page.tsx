@@ -22,7 +22,7 @@ function formatDate(d: string) {
 }
 
 export default function CommentsPage() {
-  const { get, del } = useUserApi();
+  const { get, del, authReady } = useUserApi();
   const [items, setItems] = useState<Comment[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -43,7 +43,7 @@ export default function CommentsPage() {
     }
   }, [get]);
 
-  useEffect(() => { fetchComments(); }, [fetchComments]);
+  useEffect(() => { if (authReady) fetchComments(); }, [authReady, fetchComments]);
 
   const deleteComment = async (id: string) => {
     if (!confirm("Delete this comment?")) return;
