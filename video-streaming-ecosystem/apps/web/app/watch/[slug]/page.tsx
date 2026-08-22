@@ -176,7 +176,17 @@ export default function WatchPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
 
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  const workerBase = process.env.NEXT_PUBLIC_WORKER_URL || "http://localhost:8787";
+  
+  // Multi-Worker Rotation & Load Balancing across edge proxies
+  const workerList = useMemo(() => {
+    const raw = process.env.NEXT_PUBLIC_WORKER_URLS || process.env.NEXT_PUBLIC_WORKER_URL || "http://localhost:8787";
+    return raw.split(",").map((u) => u.trim().replace(/\/$/, "")).filter(Boolean);
+  }, []);
+
+  const workerBase = useMemo(() => {
+    if (workerList.length === 0) return "http://localhost:8787";
+    return workerList[Math.floor(Math.random() * workerList.length)];
+  }, [workerList]);
 
   // Load video detail, likes, views, comments
   useEffect(() => {
