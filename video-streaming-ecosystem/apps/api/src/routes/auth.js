@@ -232,6 +232,19 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// GET /api/auth/me
+router.get('/me', protect, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: BigInt(req.user.userId) },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(publicUser(user));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/auth/profile
 router.patch('/profile', protect, async (req, res) => {
   try {

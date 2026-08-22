@@ -6,7 +6,7 @@ import { useCallback } from "react";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export function useUserApi() {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
 
   const authHeaders = useCallback(
     () => ({
@@ -19,11 +19,15 @@ export function useUserApi() {
   const get = useCallback(
     async (path: string) => {
       const res = await fetch(`${API}${path}`, { headers: authHeaders() });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        logout();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     },
-    [authHeaders]
+    [authHeaders, logout]
   );
 
   const post = useCallback(
@@ -33,11 +37,15 @@ export function useUserApi() {
         headers: authHeaders(),
         body: body ? JSON.stringify(body) : undefined,
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        logout();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     },
-    [authHeaders]
+    [authHeaders, logout]
   );
 
   const del = useCallback(
@@ -46,11 +54,15 @@ export function useUserApi() {
         method: "DELETE",
         headers: authHeaders(),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        logout();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     },
-    [authHeaders]
+    [authHeaders, logout]
   );
 
   const patch = useCallback(
@@ -60,11 +72,15 @@ export function useUserApi() {
         headers: authHeaders(),
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        logout();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     },
-    [authHeaders]
+    [authHeaders, logout]
   );
 
   return { get, post, del, patch };

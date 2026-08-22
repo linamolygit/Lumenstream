@@ -50,10 +50,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (t) {
         setToken(t);
         if (u) setUser(JSON.parse(u));
+
+        // Proactive token validation — evicts expired or invalid tokens automatically
+        fetch(`${api}/api/user/me`, {
+          headers: { Authorization: `Bearer ${t}` },
+        })
+          .then((res) => {
+            if (res.status === 401) {
+              clear();
+            } else if (res.ok) {
+              res.json().then((fresh) => {
+                if (fresh && fresh.id) {
+                  localStorage.setItem(USER_KEY, JSON.stringify(fresh));
+                  setUser(fresh);
+                }
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {});
       }
     } catch {}
     setLoading(false);
-  }, []);
+  }, [api]);
 
   const persist = (t: string, u: User) => {
     localStorage.setItem(TOKEN_KEY, t);
